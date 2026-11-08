@@ -1,4 +1,4 @@
-import type { AskHistoryMessage, AskResponse, Citation, RepoFile } from "../shared/types";
+import type { AskHistoryMessage, AskResponse, Citation, RepoFile, RepoSymbol } from "../shared/types";
 import { buildFlow } from "./flow";
 import { llmAnswer, llmConfigured } from "./llm";
 import {
@@ -73,6 +73,165 @@ function makeCiter(rec: RepoRecord) {
       }
       return `[${file}:${line}${endLine && endLine !== line ? `-${endLine}` : ""}]`;
     },
+  };
+}
+
+interface Bubble {
+  purpose: string;
+  files: RepoFile[];
+}
+
+const BUBBLE_BLURBS: Record<string, string> = {
+  ANALYSIS: "repository ingestion, parsing, graph construction and debt detection",
+  PARSER: "source parsing, symbol extraction and syntax handling",
+  GRAPH: "dependency and call-graph construction",
+  FORMAT: "markdown, syntax highlighting and presentation formatting",
+  RETRIEVAL: "search, ranking and question answering",
+  FLOW: "execution-flow tracing and blast-radius analysis",
+  LLM: "language-model integration and answer generation",
+  DATA: "storage, persistence and data access",
+  API: "HTTP routes, request handlers and the API surface",
+  UI: "the React interface and user-facing views",
+  CONFIG: "build, environment and project configuration",
+  TESTS: "test coverage and verification",
+  TOOLING: "scripts and developer tooling",
+  SHARED: "shared types and utility code",
+  CORE: "supporting application logic",
+  AUTH: "authentication and user accounts",
+  PAYMENTS: "payments and billing",
+};
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function findBubble(rec: RepoRecord, question: string): Bubble | null {
+  const normalized = normalizeQuestion(question);
+  if (!/\b(bubble|group|cluster|category)\b/.test(normalized)) return null;
+
+  const purposes = [...new Set(rec.analysis.files.map((file) => file.purpose || "CORE"))];
+  const purpose = purposes
+    .filter((candidate) =>
+      new RegExp(`\\b${escapeRegExp(candidate.toLowerCase())}\\b`).test(normalized),
+    )
+    .sort((a, b) => b.length - a.length)[0];
+  if (!purpose) return null;
+
+  const files = rec.analysis.files.filter((file) => (file.purpose || "CORE") === purpose);
+  return files.length ? { purpose, files } : null;
+}
+
+function bubbleMembers(
+  rec: RepoRecord,
+  bubble: Bubble,
+): { files: RepoFile[]; symbols: RepoSymbol[] } {
+  const files = [...bubble.files].sort(
+    (a, b) => b.loc - a.loc || b.symbols.length - a.symbols.length || a.path.localeCompare(b.path),
+  );
+  const ids = new Set(files.flatMap((file) => file.symbols));
+  const incoming = new Map<string, number>();
+  for (const edge of rec.analysis.callEdges) {
+    incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + 1);
+  }
+  const symbols = rec.analysis.symbols
+    .filter((symbol) => ids.has(symbol.id))
+    .sort(
+      (a, b) =>
+        (incoming.get(b.id) ?? 0) - (incoming.get(a.id) ?? 0) ||
+        Number(b.exported) - Number(a.exported) ||
+        a.name.localeCompare(b.name) ||
+        a.file.localeCompare(b.file),
+    );
+  return { files, symbols };
+}
+
+function formatPurposeCounts(counts: Map<string, number>): string {
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 6)
+    .map(([purpose, count]) => `${purpose} (${count})`)
+    .join(", ");
+}
+
+function bubbleAnswer(rec: RepoRecord, bubble: Bubble): AskResponse {
+  const { citations, cite } = makeCiter(rec);
+  const { files, symbols } = bubbleMembers(rec, bubble);
+  const loc = files.reduce((sum, file) => sum + file.loc, 0);
+  const blurb = BUBBLE_BLURBS[bubble.purpose] ?? "files that share this purpose tag";
+  const lines: string[] = [];
+
+  lines.push(
+    `**${bubble.purpose}** is a purpose bubble for ${blurb}. ` +
+      `It contains ${files.length} file${files.length === 1 ? "" : "s"} and ${loc.toLocaleString()} lines.`,
+  );
+
+  if (files.length) {
+    lines.push("\n**Key files**");
+    for (const file of files.slice(0, 4)) {
+      lines.push(`- \`${file.path}\` — ${file.summary} ${cite(file.path, 1)}`);
+    }
+  }
+
+  if (symbols.length) {
+    lines.push("\n**Key symbols**");
+    for (const symbol of symbols.slice(0, 5)) {
+      lines.push(
+        `- \`${symbol.name}\` — \`${symbol.file}:${symbol.line}\` ${cite(
+          symbol.file,
+          symbol.line,
+          undefined,
+          symbol.name,
+        )}`,
+      );
+    }
+  }
+
+  const memberPaths = new Set(files.map((file) => file.path));
+  const purposeByFile = new Map(
+    rec.analysis.files.map((file) => [file.path, file.purpose || "CORE"]),
+  );
+  const outgoing = new Map<string, number>();
+  const incoming = new Map<string, number>();
+  for (const edge of rec.analysis.fileEdges) {
+    const fromInside = memberPaths.has(edge.from);
+    const toInside = memberPaths.has(edge.to);
+    if (fromInside === toInside) continue;
+    const outside = toInside ? edge.from : edge.to;
+    const target = purposeByFile.get(outside) ?? "CORE";
+    const counts = toInside ? incoming : outgoing;
+    counts.set(target, (counts.get(target) ?? 0) + 1);
+  }
+  if (outgoing.size || incoming.size) {
+    lines.push("\n**How it connects**");
+    if (outgoing.size) lines.push(`- Imports from: ${formatPurposeCounts(outgoing)}`);
+    if (incoming.size) lines.push(`- Used by: ${formatPurposeCounts(incoming)}`);
+  }
+
+  const endpoints = files.flatMap((file) => file.endpoints);
+  if (endpoints.length) {
+    lines.push("\n**Routes in this bubble**");
+    for (const endpoint of endpoints.slice(0, 4)) {
+      lines.push(
+        `- \`${endpoint.method} ${endpoint.path}\` — \`${endpoint.file}:${endpoint.line}\` ${cite(
+          endpoint.file,
+          endpoint.line,
+          undefined,
+          `${endpoint.method} ${endpoint.path}`,
+        )}`,
+      );
+    }
+  }
+
+  lines.push("\n**Members**");
+  for (const file of files) {
+    lines.push(`- \`${file.path}\` — ${file.loc} lines, ${file.symbols.length} symbols`);
+  }
+
+  return {
+    answer: lines.join("\n"),
+    citations: citations.slice(0, 12),
+    mode: "local",
+    topFiles: files.slice(0, 8).map((file) => file.path),
   };
 }
 
@@ -230,14 +389,20 @@ function languageName(lang: string): string {
   return names[lang] ?? lang.toUpperCase();
 }
 
-function buildContext(rec: RepoRecord, files: RepoFile[], symbols: string[]): string {
+function buildContext(
+  rec: RepoRecord,
+  files: RepoFile[],
+  symbols: string[],
+  options: { maxFiles?: number; lead?: string[] } = {},
+): string {
   const chunks: string[] = [];
   chunks.push(
     `Repository: ${rec.analysis.source.label} — ${rec.analysis.stats.files} files, ${rec.analysis.stats.loc} lines.`,
   );
   chunks.push(`Entry points: ${rec.analysis.entryPoints.join(", ") || "unknown"}`);
+  if (options.lead?.length) chunks.push(...options.lead);
 
-  for (const file of files.slice(0, 6)) {
+  for (const file of files.slice(0, options.maxFiles ?? 6)) {
     const content = rec.contents.get(file.path) ?? "";
     const lines = content.split("\n");
     const numbered = lines
@@ -254,6 +419,24 @@ function buildContext(rec: RepoRecord, files: RepoFile[], symbols: string[]): st
     chunks.push(`\nLikely relevant symbols: ${symbols.join(", ")}`);
   }
   return chunks.join("\n");
+}
+
+function buildBubbleContext(rec: RepoRecord, bubble: Bubble): string {
+  const { files, symbols } = bubbleMembers(rec, bubble);
+  const loc = files.reduce((sum, file) => sum + file.loc, 0);
+  return buildContext(
+    rec,
+    files,
+    symbols.slice(0, 10).map((symbol) => symbol.name),
+    {
+      maxFiles: 8,
+      lead: [
+        `Purpose bubble: ${bubble.purpose} — ${files.length} files, ${loc.toLocaleString()} lines.`,
+        `All files below belong to the ${bubble.purpose} purpose bubble. Treat a question about this bubble as a question about the entire group, not a single symbol or file.`,
+        `Bubble members: ${files.map((file) => file.path).join(", ")}`,
+      ],
+    },
+  );
 }
 
 function extractCitations(text: string, rec: RepoRecord): Citation[] {
@@ -287,6 +470,35 @@ export async function answerQuestion(
 ): Promise<AskResponse> {
   const small = smallTalkAnswer(rec, question);
   if (small) return small;
+
+  const bubble = findBubble(rec, question);
+  if (bubble) {
+    const members = bubbleMembers(rec, bubble);
+    if (llmConfigured()) {
+      const text = await llmAnswer(
+        question,
+        buildBubbleContext(rec, bubble),
+        rec.analysis.source.label,
+        history,
+      );
+      if (text && !/\bclosest (match|file)\b/i.test(text)) {
+        const extracted = extractCitations(text, rec);
+        return {
+          answer: text,
+          citations: extracted.length
+            ? extracted
+            : members.files.slice(0, 5).map((file) => ({
+                file: file.path,
+                line: 1,
+                label: `${file.path}:1`,
+              })),
+          mode: "llm",
+          topFiles: members.files.slice(0, 8).map((file) => file.path),
+        };
+      }
+    }
+    return bubbleAnswer(rec, bubble);
+  }
 
   if (detectIntent(question) === "overview") {
     const overview = overviewAnswer(rec);
