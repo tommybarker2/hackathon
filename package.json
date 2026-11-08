@@ -1,9 +1,9 @@
 {
-  "name": "code-archaeologist",
+  "name": "repo_cloud",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Understand any codebase. Instantly. AI-assisted code intelligence with an interactive architecture graph and explainable execution flows.",
+  "description": "The Repo Cloud — AI-assisted code intelligence with a purpose-bubble code map and explainable execution flows.",
   "scripts": {
     "dev": "tsx server/index.ts",
     "build": "vite build",

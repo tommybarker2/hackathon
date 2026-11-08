@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Analysis } from "../../shared/types";
+import type { Analysis, CommitInfo } from "../../shared/types";
 import { fmt, langLabel, LANG_COLORS } from "../format";
 
 interface Props {
@@ -7,9 +7,18 @@ interface Props {
   onOpenFile: (path: string, line?: number) => void;
   onAsk: (question: string) => void;
   onTrace: () => void;
+  onLoadCommit: (commit: CommitInfo) => void;
+  busy: boolean;
 }
 
-export function OverviewView({ analysis, onOpenFile, onAsk, onTrace }: Props) {
+export function OverviewView({
+  analysis,
+  onOpenFile,
+  onAsk,
+  onTrace,
+  onLoadCommit,
+  busy,
+}: Props) {
   const fanIn = useMemo(() => {
     const map = new Map<string, number>();
     for (const edge of analysis.fileEdges) map.set(edge.to, (map.get(edge.to) ?? 0) + 1);
@@ -49,11 +58,19 @@ export function OverviewView({ analysis, onOpenFile, onAsk, onTrace }: Props) {
           <p className="lede">
             {fmt(analysis.stats.files)} files · {fmt(analysis.stats.loc)} lines ·{" "}
             {analysis.stats.symbols} symbols · {analysis.stats.endpoints} routes
-            {analysis.source.branch ? ` · ${analysis.source.branch}` : ""}
+            {analysis.source.ref
+              ? ` · snapshot ${analysis.source.ref}`
+              : analysis.source.branch
+                ? ` · ${analysis.source.branch}`
+                : ""}
           </p>
           <p className="muted small-text">
-            {analysis.source.kind === "github" ? analysis.source.url : analysis.source.path} · analysed{" "}
-            {new Date(analysis.analyzedAt).toLocaleTimeString()}
+            {analysis.source.ref
+              ? [analysis.source.refSubject, analysis.source.refDate].filter(Boolean).join(" · ")
+              : analysis.source.kind === "github"
+                ? analysis.source.url
+                : "Local working tree"}{" "}
+            · analysed {new Date(analysis.analyzedAt).toLocaleTimeString()}
           </p>
         </div>
         <div className="hero-actions">
@@ -105,7 +122,7 @@ export function OverviewView({ analysis, onOpenFile, onAsk, onTrace }: Props) {
               ))}
             </div>
           ) : (
-            <p className="empty">No obvious entry point — open the architecture map to explore.</p>
+            <p className="empty">No obvious entry point — open the Cloud map to explore.</p>
           )}
         </section>
 
@@ -191,20 +208,41 @@ export function OverviewView({ analysis, onOpenFile, onAsk, onTrace }: Props) {
       <section className="card">
         <div className="section-head">
           <h3>Recent archaeology</h3>
-          <span className="muted">From commit history</span>
+          <span className="muted">
+            {analysis.source.ref ? "Older commits from this snapshot" : "Pick a commit to load that version"}
+          </span>
         </div>
         {analysis.commits.length ? (
           <div className="commit-list">
-            {analysis.commits.slice(0, 8).map((commit) => (
-              <div className="commit" key={`${commit.hash}-${commit.subject}`}>
-                <span className="commit-hash">{commit.hash}</span>
-                <span className="commit-subject">{commit.subject}</span>
-                <span className="commit-meta">
-                  {commit.author} · {commit.date}
-                  {commit.files ? ` · ${commit.files} files` : ""}
-                </span>
-              </div>
-            ))}
+            {analysis.commits.slice(0, 8).map((commit) => {
+              const current = Boolean(analysis.source.ref) && analysis.source.ref === commit.hash;
+              return (
+                <button
+                  type="button"
+                  className={`commit${current ? " current" : ""}`}
+                  key={`${commit.hash}-${commit.subject}`}
+                  onClick={() => onLoadCommit(commit)}
+                  disabled={busy || current}
+                  title={
+                    current
+                      ? "This commit is already loaded"
+                      : "Analyze the repository at this commit"
+                  }
+                >
+                  <span className="commit-hash">{commit.hash}</span>
+                  <span className="commit-subject">{commit.subject}</span>
+                  <span className="commit-meta">
+                    <span>
+                      {commit.author} · {commit.date}
+                      {commit.files ? ` · ${commit.files} files` : ""}
+                    </span>
+                    <span className="commit-action">
+                      {current ? "Viewing" : busy ? "Working…" : "Load →"}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         ) : (
           <p className="empty">

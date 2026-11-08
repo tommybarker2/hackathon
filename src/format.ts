@@ -1,3 +1,5 @@
+import type { RepoSymbol } from "../shared/types";
+
 export const LANG_COLORS: Record<string, string> = {
   ts: "#9ec5f2",
   tsx: "#8fd6c0",
@@ -8,6 +10,7 @@ export const LANG_COLORS: Record<string, string> = {
   java: "#f0a79a",
   rb: "#f0a5b3",
   rs: "#e2b79a",
+  hs: "#cbb6ec",
   css: "#c9b8ef",
   html: "#f5ad98",
   json: "#c4c4c4",
@@ -27,6 +30,7 @@ export const LANG_LABELS: Record<string, string> = {
   java: "Java",
   rb: "Ruby",
   rs: "Rust",
+  hs: "Haskell",
   css: "CSS",
   html: "HTML",
   json: "JSON",
@@ -57,6 +61,29 @@ export function shortPath(filePath: string, max = 34): string {
     out = next;
   }
   return `…/${out}`;
+}
+
+export function symbolTooltip(
+  symbol: RepoSymbol,
+  counts: { callers?: number; callees?: number } = {},
+): string {
+  const signature = `${symbol.name}${symbol.params ? `(${symbol.params})` : ""}`;
+  const kind = symbol.kind === "component" ? "component" : symbol.kind;
+  const location = `${kind}${symbol.parent ? ` in ${symbol.parent}` : ""} at ${symbol.file}:${symbol.line}`;
+  const usage = [
+    `${symbol.loc} line${symbol.loc === 1 ? "" : "s"}`,
+    symbol.exported ? "exported" : "internal",
+    ...(counts.callers !== undefined
+      ? [`${counts.callers} caller${counts.callers === 1 ? "" : "s"}`]
+      : []),
+    ...(counts.callees !== undefined
+      ? [`${counts.callees} callee${counts.callees === 1 ? "" : "s"}`]
+      : []),
+  ].join(" · ");
+  const description = symbol.doc?.trim();
+  return description
+    ? `${signature} — ${description}\n${location} · ${usage}`
+    : `${signature} — ${location} · ${usage}`;
 }
 
 export function timeAgo(iso: string): string {

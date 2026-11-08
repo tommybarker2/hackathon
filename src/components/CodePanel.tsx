@@ -1,7 +1,58 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Analysis } from "../../shared/types";
+import type { Analysis, RepoFile } from "../../shared/types";
 import { fetchFile } from "../api";
-import { langLabel } from "../format";
+import { langLabel, symbolTooltip } from "../format";
+
+const RESERVED_EXPORT_NAMES = new Set([
+  "async",
+  "class",
+  "const",
+  "default",
+  "enum",
+  "export",
+  "function",
+  "interface",
+  "let",
+  "type",
+  "var",
+]);
+
+function formatList(items: string[]): string {
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+function moduleName(specifier: string): string {
+  const normalized = specifier.replace(/\\/g, "/").replace(/^\.\.?\//, "");
+  const base = normalized.split("/").filter(Boolean).pop() ?? normalized;
+  return base.replace(/\.(tsx?|jsx?|mjs|cjs|py|go|rs|rb|hs|css|html|json|md|sql|ya?ml)$/i, "");
+}
+
+function describeFile(meta: RepoFile): string {
+  const parts = [meta.summary.replace(/ and \d+ more\b/g, "").trim()];
+  const modules = [...new Set(meta.imports.map(moduleName).filter((name) => name && name !== "index"))];
+  const components = modules.filter((name) => /^[A-Z]/.test(name));
+
+  if (components.length >= 2) {
+    parts.push(`It connects the main views and panels, including ${formatList(components.slice(0, 5))}.`);
+  } else if (modules.length) {
+    parts.push(`It works with ${formatList(modules.slice(0, 4))}.`);
+  }
+
+  const exports = meta.exported.filter(
+    (name) => /^[A-Za-z_$][\w$]*$/.test(name) && !RESERVED_EXPORT_NAMES.has(name),
+  );
+  if (exports.length) {
+    parts.push(
+      `${exports.length === 1 ? "Its public entry point is" : "Its public entry points are"} ${formatList(
+        exports.slice(0, 3),
+      )}${exports.length > 3 ? " and other exports" : ""}.`,
+    );
+  }
+
+  return parts.join(" ");
+}
 
 interface Props {
   analysis: Analysis;
@@ -30,6 +81,7 @@ export function CodePanel({
   const hitRef = useRef<HTMLDivElement | null>(null);
 
   const meta = analysis.files.find((f) => f.path === file);
+  const description = meta ? describeFile(meta) : "";
   const symbols = useMemo(
     () => analysis.symbols.filter((s) => s.file === file).sort((a, b) => a.line - b.line),
     [analysis.symbols, file],
@@ -86,7 +138,7 @@ export function CodePanel({
         <div>
           <div className="eyebrow">Code inspector</div>
           <h3 title={file}>{file}</h3>
-          {meta && <p className="code-summary">{meta.summary}</p>}
+          {description && <p className="code-summary">{description}</p>}
         </div>
         <button type="button" className="icon-button" onClick={onClose} title="Close inspector">
           ✕
@@ -132,7 +184,13 @@ export function CodePanel({
       </div>
 
       {activeSymbol && (
-        <div className="active-symbol">
+        <div
+          className="active-symbol"
+          title={symbolTooltip(activeSymbol, {
+            callers: callCounts.incoming.get(activeSymbol.id) ?? 0,
+            callees: callCounts.outgoing.get(activeSymbol.id) ?? 0,
+          })}
+        >
           In focus: <strong>{activeSymbol.name}</strong> · {activeSymbol.kind} ·{" "}
           {callCounts.incoming.get(activeSymbol.id) ?? 0} callers ·{" "}
           {callCounts.outgoing.get(activeSymbol.id) ?? 0} callees
@@ -164,7 +222,10 @@ export function CodePanel({
               type="button"
               className={`symbol-chip ${activeSymbol?.id === symbol.id ? "active" : ""}`}
               onClick={() => onOpenFile(symbol.file, symbol.line)}
-              title={`${symbol.kind} · ${symbol.loc} lines`}
+              title={symbolTooltip(symbol, {
+                callers: callCounts.incoming.get(symbol.id) ?? 0,
+                callees: callCounts.outgoing.get(symbol.id) ?? 0,
+              })}
             >
               {symbol.name}
             </button>

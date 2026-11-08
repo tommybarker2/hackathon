@@ -1,24 +1,37 @@
 import { useEffect, useRef, useState } from "react";
-import type { Analysis, ImpactResponse } from "../shared/types";
+import type { Analysis, CommitInfo, ImpactResponse } from "../shared/types";
 import { analyzeImpact, analyzeRepo, getConfig } from "./api";
 import { AskView } from "./components/AskView";
 import { CodePanel } from "./components/CodePanel";
 import { DebtView } from "./components/DebtView";
+import { DemoSlideshow } from "./components/DemoSlideshow";
+import { ExamplePicker } from "./components/ExamplePicker";
 import { FlowsView } from "./components/FlowsView";
 import { MapView } from "./components/MapView";
-import { Meeple } from "./components/Meeple";
+import { CloudLogo } from "./components/CloudLogo";
 import { OverviewView } from "./components/OverviewView";
-import { fmt } from "./format";
+import type { ExampleRepo } from "./examples";
 
 type Tab = "overview" | "map" | "ask" | "flows" | "debt";
+type Theme = "light" | "dark";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
-  { id: "map", label: "Architecture" },
-  { id: "ask", label: "Ask AI" },
+  { id: "map", label: "Cloud" },
   { id: "flows", label: "Flows" },
-  { id: "debt", label: "Debt" },
+  { id: "ask", label: "Ask AI" },
+  { id: "debt", label: "Warnings" },
 ];
+
+function initialTheme(): Theme {
+  try {
+    const saved = window.localStorage.getItem("ca-theme");
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {
+    // Storage can be unavailable; fall through to the OS preference.
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
 export default function App() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -35,6 +48,9 @@ export default function App() {
   const [githubUrl, setGithubUrl] = useState("");
   const [pendingAsk, setPendingAsk] = useState<{ question: string; nonce: number }>();
   const [flowSeed, setFlowSeed] = useState<{ symbolId?: string; query?: string; nonce: number }>();
+  const [theme, setTheme] = useState<Theme>(initialTheme);
+  const [examplesOpen, setExamplesOpen] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
   const booted = useRef(false);
 
   useEffect(() => {
@@ -48,15 +64,39 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem("ca-theme", theme);
+    } catch {
+      // Persisting the preference is best-effort.
+    }
+  }, [theme]);
+
+  useEffect(() => {
     setSeen((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)));
   }, [tab]);
 
-  async function run(input?: { source: "local" | "github"; path?: string; url?: string }) {
-    const payload =
-      input ??
-      (source === "local"
-        ? { source: "local" as const, path: localPath.trim() || "." }
-        : { source: "github" as const, url: githubUrl.trim() });
+  async function run(input?: {
+    source: "local" | "github";
+    path?: string;
+    url?: string;
+    ref?: string;
+  }) {
+    let payload = input;
+
+    if (!payload) {
+      const text = localPath.trim() || ".";
+      if (source === "local" && /github\.com[/:]/i.test(text)) {
+        // A pasted GitHub URL should just work, even from the local-path field.
+        setSource("github");
+        setGithubUrl(text);
+        payload = { source: "github", url: text };
+      } else if (source === "local") {
+        payload = { source: "local", path: text };
+      } else {
+        payload = { source: "github", url: githubUrl.trim() };
+      }
+    }
 
     if (payload.source === "github" && !payload.url) {
       setError("Paste a GitHub repository URL first.");
@@ -80,6 +120,49 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function loadCommit(commit: CommitInfo) {
+    if (!analysis || busy) return;
+    const ref = commit.sha ?? commit.hash;
+    if (analysis.source.kind === "github" && analysis.source.url) {
+      setSource("github");
+      setGithubUrl(analysis.source.url);
+      void run({ source: "github", url: analysis.source.url, ref });
+      return;
+    }
+    const local = analysis.source.path ?? localPath;
+    setSource("local");
+    setLocalPath(local);
+    void run({ source: "local", path: local, ref });
+  }
+
+  function loadLatest() {
+    if (!analysis || busy) return;
+    if (analysis.source.kind === "github" && analysis.source.url) {
+      setSource("github");
+      setGithubUrl(analysis.source.url);
+      void run({ source: "github", url: analysis.source.url });
+      return;
+    }
+    const local = analysis.source.path ?? localPath;
+    setSource("local");
+    setLocalPath(local);
+    void run({ source: "local", path: local });
+  }
+
+  function loadExample(example: ExampleRepo) {
+    setExamplesOpen(false);
+    if (example.kind === "github" && example.url) {
+      setSource("github");
+      setGithubUrl(example.url);
+      void run({ source: "github", url: example.url });
+      return;
+    }
+    const local = example.localPath ?? ".";
+    setSource("local");
+    setLocalPath(local);
+    void run({ source: "local", path: local });
   }
 
   function openFile(file: string, line?: number) {
@@ -123,15 +206,36 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark" aria-hidden>
-            <Meeple size={26} />
+            <CloudLogo size={26} />
           </span>
           <span className="brand-text">
-            <strong>Code Archaeologist</strong>
-            <span>Understand any codebase.</span>
+            <strong>The Repo Cloud</strong>
           </span>
         </div>
 
         <div className="repo-controls">
+          <button
+            type="button"
+            className="demo-button"
+            onClick={() => {
+              setExamplesOpen(false);
+              setDemoOpen(true);
+            }}
+            aria-label="Open guided demo"
+            title="Open guided demo"
+          >
+            <span className="demo-button-icon" aria-hidden>
+              ▶
+            </span>
+            Demo
+          </button>
+          <button
+            type="button"
+            className="ghost examples-button"
+            onClick={() => setExamplesOpen(true)}
+          >
+            Examples
+          </button>
           <div className="segmented">
             <button
               type="button"
@@ -154,8 +258,16 @@ export default function App() {
               value={localPath}
               onChange={(event) => setLocalPath(event.target.value)}
               spellCheck={false}
-              title="Path to a local repository"
-              aria-label="Local repository path"
+              title="Local repository path — or paste a public GitHub URL"
+              aria-label="Local repository path or GitHub URL"
+              placeholder="Path — or paste a GitHub URL"
+              onPaste={(event) => {
+                const text = event.clipboardData.getData("text").trim();
+                if (!/github\.com[/:]/i.test(text)) return;
+                event.preventDefault();
+                setSource("github");
+                setGithubUrl(text);
+              }}
             />
           ) : (
             <input
@@ -173,6 +285,15 @@ export default function App() {
           <button type="button" className="primary" onClick={() => void run()} disabled={busy}>
             {busy ? "Analyzing…" : "Analyze"}
           </button>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={() => setTheme((value) => (value === "light" ? "dark" : "light"))}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            <span aria-hidden>{theme === "dark" ? "☀" : "☾"}</span>
+          </button>
         </div>
       </header>
 
@@ -187,13 +308,26 @@ export default function App() {
                 Open on GitHub ↗
               </a>
             )}
-            <div className="badges">
-              <span className="badge">{analysis.stats.files} files</span>
-              <span className="badge">{fmt(analysis.stats.loc)} LOC</span>
-              <span className="badge">{analysis.stats.symbols} symbols</span>
-              <span className="badge">{analysis.stats.endpoints} routes</span>
-              <span className="badge">{analysis.stats.dbOps} DB ops</span>
-            </div>
+            {analysis.source.ref && (
+              <>
+                <span
+                  className="badge snapshot-badge"
+                  title={[analysis.source.refSubject, analysis.source.refDate]
+                    .filter(Boolean)
+                    .join(" · ")}
+                >
+                  Snapshot {analysis.source.ref}
+                </span>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={loadLatest}
+                  disabled={busy}
+                >
+                  Back to latest
+                </button>
+              </>
+            )}
             <span className="engine-badge">
               {engine.llm ? `LLM · ${engine.model}` : "Deterministic engine"}
             </span>
@@ -222,7 +356,7 @@ export default function App() {
           {!analysis && (
             <div className="loading-screen">
               <div className="loading-figure">
-                <Meeple size={124} hat />
+                <CloudLogo size={124} />
               </div>
               <div className="loading-bubble">
                 {busy ? (
@@ -258,6 +392,8 @@ export default function App() {
                     onOpenFile={openFile}
                     onAsk={ask}
                     onTrace={() => setTab("flows")}
+                    onLoadCommit={loadCommit}
+                    busy={busy}
                   />
                 </div>
               )}
@@ -329,6 +465,23 @@ export default function App() {
           />
         )}
       </div>
+
+      <ExamplePicker
+        open={examplesOpen}
+        busy={busy}
+        onClose={() => setExamplesOpen(false)}
+        onPick={loadExample}
+      />
+
+      <DemoSlideshow
+        open={demoOpen}
+        analysis={analysis}
+        onClose={() => setDemoOpen(false)}
+        onExplore={(nextTab) => {
+          setDemoOpen(false);
+          setTab(nextTab);
+        }}
+      />
 
       {error && analysis && (
         <div className="toast" role="alert">

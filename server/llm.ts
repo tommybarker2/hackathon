@@ -1,3 +1,5 @@
+import type { AskHistoryMessage } from "../shared/types";
+
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
 // Flash-lite answers in about a second; 3.8-flash spends its token budget on
 // hidden reasoning (and long waits), so it is an opt-in via OPENAI_MODEL.
@@ -21,7 +23,7 @@ export function llmModel(): string {
   return llmProvider() === "gemini" ? GEMINI_DEFAULT_MODEL : "gpt-4o-mini";
 }
 
-const SYSTEM_PROMPT = `You are Code Archaeologist, a senior engineer explaining an unfamiliar codebase.
+const SYSTEM_PROMPT = `You are The Repo Cloud, a senior engineer explaining an unfamiliar codebase.
 
 Rules:
 - Answer ONLY from the repository context provided. If the context does not contain the answer, say so plainly.
@@ -30,18 +32,14 @@ Rules:
 - Match the depth to the question: a greeting, thanks or "what can you do" gets one or two conversational sentences and no citations; a code question gets a direct answer followed only by the details that matter.
 - Use a heading only when the answer genuinely has distinct sections, and name it for the question (for example "Where it lives", "How it runs", "What depends on it").
 - Prefer one or two short paragraphs. Use a list or numbered steps only when order or enumeration matters.
+- The Cloud map groups files into purpose bubbles such as PARSER, GRAPH, LLM, UI and CORE. A question about a bubble means that purpose group: answer from the files whose Purpose matches it, and do not reject the term just because the source code does not contain the word "bubble".
+- Earlier conversation turns may be included for continuity. Use them to resolve follow-up references, but base every code claim on the source context supplied with the latest question.
 - Be concrete: name the functions and modules involved and the order they run in.
 - Never invent files, functions, endpoints or behaviour.`;
 
-/**
- * Optional layer: if an OpenAI or Gemini key is present the answer is written
- * by an LLM from retrieved source; otherwise the deterministic engine answers.
- */
-export async function llmAnswer(
-  question: string,
-  context: string,
-  repoLabel: string,
-): Promise<string | null> {
+type LlmMessage = { role: "system" | "user" | "assistant"; content: string };
+
+async function llmComplete(messages: LlmMessage[], maxTokens: number): Promise<string | null> {
   const provider = llmProvider();
   if (!provider) return null;
 
@@ -65,14 +63,8 @@ export async function llmAnswer(
       body: JSON.stringify({
         model,
         temperature: 0.2,
-        max_tokens: 1100,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: `Repository: ${repoLabel}\n\nQuestion: ${question}\n\nRetrieved source context:\n${context}`,
-          },
-        ],
+        max_tokens: maxTokens,
+        messages,
       }),
       signal: controller.signal,
     });
@@ -94,4 +86,30 @@ export async function llmAnswer(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Optional layer: if an OpenAI or Gemini key is present the answer is written
+ * by an LLM from retrieved source; otherwise the deterministic engine answers.
+ */
+export async function llmAnswer(
+  question: string,
+  context: string,
+  repoLabel: string,
+  history: AskHistoryMessage[] = [],
+): Promise<string | null> {
+  return llmComplete(
+    [
+      { role: "system", content: SYSTEM_PROMPT },
+      ...history.slice(-6).map((message) => ({
+        role: message.role,
+        content: message.text.slice(0, 1200),
+      })),
+      {
+        role: "user",
+        content: `Repository: ${repoLabel}\n\nQuestion: ${question}\n\nRetrieved source context:\n${context}`,
+      },
+    ],
+    1100,
+  );
 }

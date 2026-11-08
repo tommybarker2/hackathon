@@ -38,6 +38,8 @@ const IGNORED_DIRS = new Set([
 const IGNORED_FILE =
   /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|poetry\.lock|composer\.lock|Gemfile\.lock)$|\.min\.(js|css)$|\.map$|\.(png|jpe?g|gif|webp|avif|ico|svg|woff2?|ttf|otf|eot|mp4|mov|webm|zip|tar|gz|pdf|wasm|so|dll|dylib|exe|class|jar|pyc|lockb|db|sqlite)$/i;
 
+export const MAX_FILE_BYTES = 400_000;
+
 export interface SourceFile {
   path: string;
   content: string;
@@ -71,6 +73,10 @@ export function detectLang(filePath: string): Lang {
       return "rb";
     case ".rs":
       return "rs";
+    case ".hs":
+    case ".lhs":
+    case ".hsc":
+      return "hs";
     case ".css":
     case ".scss":
     case ".less":
@@ -94,11 +100,20 @@ export function detectLang(filePath: string): Lang {
 }
 
 export function isCodeLang(lang: Lang): boolean {
-  return ["ts", "tsx", "js", "jsx", "py", "go", "java", "rb", "rs"].includes(lang);
+  return ["ts", "tsx", "js", "jsx", "py", "go", "java", "rb", "rs", "hs"].includes(lang);
 }
 
 export function toPosix(p: string): string {
   return p.split(path.sep).join("/");
+}
+
+/** Shared filters for filesystem walks and git-tree snapshots. */
+export function isIgnoredRepoPath(filePath: string): boolean {
+  const parts = filePath.split("/");
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (parts[i].startsWith(".") || IGNORED_DIRS.has(parts[i])) return true;
+  }
+  return IGNORED_FILE.test(filePath);
 }
 
 /**
@@ -147,7 +162,7 @@ export async function walkLocal(
       const lang = detectLang(rel);
       if (lang === "other") continue;
       const info = await fs.stat(abs).catch(() => null);
-      if (!info || info.size > 400_000) continue;
+      if (!info || info.size > MAX_FILE_BYTES) continue;
       const content = await fs.readFile(abs, "utf8").catch(() => null);
       if (content === null || content.includes("\u0000")) continue;
       files.push({ path: rel, content, lang, size: info.size });

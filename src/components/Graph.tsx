@@ -18,6 +18,7 @@ interface GNode {
   label: string;
   loc: number;
   lang: string;
+  purpose: string;
   degree: number;
 }
 
@@ -47,6 +48,7 @@ function buildGraph(analysis: Analysis, langFilter: string | null): { nodes: GNo
     label: f.path.split("/").pop() ?? f.path,
     loc: f.loc,
     lang: f.lang,
+    purpose: f.purpose || "CORE",
     degree: degree.get(f.path) ?? 0,
   }));
   const included = new Set(nodes.map((n) => n.path));
@@ -54,6 +56,102 @@ function buildGraph(analysis: Analysis, langFilter: string | null): { nodes: GNo
     .filter((e) => included.has(e.from) && included.has(e.to))
     .map((e) => ({ source: e.from, target: e.to }));
   return { nodes, links };
+}
+
+interface PurposeCluster {
+  purpose: string;
+  nodes: GNode[];
+  center: { x: number; y: number };
+  radius: number;
+  color: string;
+}
+
+const PURPOSE_COLORS: Record<string, string> = {
+  PARSER: "#e0a458",
+  GRAPH: "#7fb7be",
+  FORMAT: "#e5989b",
+  RETRIEVAL: "#b8a1d9",
+  FLOW: "#f2b5a7",
+  LLM: "#cbb6ec",
+  ANALYSIS: "#8ecae6",
+  DATA: "#90be6d",
+  AUTH: "#f4a261",
+  PAYMENTS: "#e9c46a",
+  API: "#f2a7c3",
+  UI: "#f6d186",
+  TESTS: "#b7e4c7",
+  CONFIG: "#c9ccd5",
+  TOOLING: "#d4a373",
+  SHARED: "#a9b7c6",
+  CORE: "#b8c4d6",
+};
+
+function purposeColor(purpose: string): string {
+  return PURPOSE_COLORS[purpose] ?? "#b8c4d6";
+}
+
+function clusterRadius(count: number): number {
+  return Math.min(150, Math.max(46, 28 + Math.sqrt(count) * 18));
+}
+
+/**
+ * Places each purpose group in its own bubble, then distributes its files in a
+ * golden-angle spiral inside that bubble. Import edges are drawn across bubbles.
+ */
+function layoutByPurpose(nodes: GNode[]): {
+  positions: Map<string, { x: number; y: number }>;
+  clusters: PurposeCluster[];
+} {
+  const positions = new Map<string, { x: number; y: number }>();
+  const groups = new Map<string, GNode[]>();
+  for (const node of nodes) {
+    const members = groups.get(node.purpose) ?? [];
+    members.push(node);
+    groups.set(node.purpose, members);
+  }
+
+  const ordered = [...groups.entries()].sort(
+    (a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]),
+  );
+  const margin = 16;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(ordered.length * (W / H))));
+  const rows = Math.max(1, Math.ceil(ordered.length / cols));
+  const cellW = (W - margin * 2) / cols;
+  const cellH = (H - margin * 2) / rows;
+  const clusters: PurposeCluster[] = ordered.map(([purpose, members], index) => {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    const itemsInRow = Math.min(cols, ordered.length - row * cols);
+    const startX = (W - itemsInRow * cellW) / 2;
+    const radius = Math.min(clusterRadius(members.length), cellW * 0.44, cellH * 0.44);
+    const jitterX = ((index * 37) % 17) - 8;
+    const jitterY = ((index * 53) % 13) - 6;
+    const center = {
+      x: Math.max(
+        margin + radius,
+        Math.min(W - margin - radius, startX + cellW * (col + 0.5) + jitterX),
+      ),
+      y: Math.max(
+        margin + radius,
+        Math.min(H - margin - radius, margin + cellH * (row + 0.5) + jitterY),
+      ),
+    };
+    return { purpose, nodes: members, center, radius, color: purposeColor(purpose) };
+  });
+
+  for (const cluster of clusters) {
+    const spread = Math.max(8, cluster.radius - 34);
+    cluster.nodes.forEach((node, index) => {
+      const angle = index * 2.399963 + 0.4;
+      const distance = spread * Math.sqrt((index + 0.4) / cluster.nodes.length) * 0.95;
+      positions.set(node.path, {
+        x: Math.max(18, Math.min(W - 18, cluster.center.x + Math.cos(angle) * distance)),
+        y: Math.max(24, Math.min(H - 24, cluster.center.y + 6 + Math.sin(angle) * distance)),
+      });
+    });
+  }
+
+  return { positions, clusters };
 }
 
 function layout(nodes: GNode[], links: GLink[]): Map<string, { x: number; y: number }> {
@@ -134,6 +232,7 @@ function radiusFor(loc: number): number {
 
 export function Graph({ analysis, selectedFile, highlightFiles, onSelectFile }: Props) {
   const [langFilter, setLangFilter] = useState<string | null>(null);
+  const [grouped, setGrouped] = useState(true);
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [dragged, setDragged] = useState<Record<string, { x: number; y: number }>>({});
   const [hovered, setHovered] = useState<string | null>(null);
@@ -144,12 +243,18 @@ export function Graph({ analysis, selectedFile, highlightFiles, onSelectFile }: 
   );
 
   const { nodes, links } = useMemo(() => buildGraph(analysis, langFilter), [analysis, langFilter]);
-  const positions = useMemo(() => layout(nodes, links), [nodes, links]);
+  const { positions, clusters } = useMemo(
+    () =>
+      grouped
+        ? layoutByPurpose(nodes)
+        : { positions: layout(nodes, links), clusters: [] as PurposeCluster[] },
+    [nodes, links, grouped],
+  );
 
   useEffect(() => {
     setDragged({});
     setView({ x: 0, y: 0, k: 1 });
-  }, [analysis.id, langFilter]);
+  }, [analysis.id, langFilter, grouped]);
 
   const highlight = useMemo(() => new Set(highlightFiles), [highlightFiles]);
 
@@ -246,6 +351,14 @@ export function Graph({ analysis, selectedFile, highlightFiles, onSelectFile }: 
           )}
         </div>
         <div className="zoom-controls">
+          <button
+            type="button"
+            className={`ghost tiny ${grouped ? "active" : ""}`}
+            onClick={() => setGrouped((value) => !value)}
+            title={grouped ? "Ungroup the purpose bubbles" : "Group files by purpose"}
+          >
+            {grouped ? "Purposes" : "Free layout"}
+          </button>
           <button type="button" className="ghost" onClick={() => zoom(1.25)} title="Zoom in">
             +
           </button>
@@ -311,11 +424,46 @@ export function Graph({ analysis, selectedFile, highlightFiles, onSelectFile }: 
               />
             );
           })}
+          {clusters.map((cluster) => {
+            const labelWidth = Math.max(62, cluster.purpose.length * 7 + 30);
+            return (
+              <g key={`purpose-${cluster.purpose}`} className="purpose-cluster" aria-hidden>
+                <circle
+                  cx={cluster.center.x}
+                  cy={cluster.center.y}
+                  r={cluster.radius}
+                  fill={cluster.color}
+                  fillOpacity={0.13}
+                  stroke={cluster.color}
+                  strokeOpacity={0.62}
+                  strokeWidth={2.5}
+                  strokeDasharray="5 5"
+                />
+                <rect
+                  x={cluster.center.x - labelWidth / 2}
+                  y={cluster.center.y - cluster.radius + 3}
+                  width={labelWidth}
+                  height={20}
+                  rx={7}
+                  className="purpose-label-bg"
+                />
+                <text
+                  x={cluster.center.x}
+                  y={cluster.center.y - cluster.radius + 17}
+                  className="purpose-label"
+                >
+                  {cluster.purpose}{" "}
+                  <tspan className="purpose-count">{cluster.nodes.length}</tspan>
+                </text>
+              </g>
+            );
+          })}
           {nodes.map((node) => {
             const point = positionOf(node.path);
             const isSelected = node.path === selectedFile;
             const isHovered = node.path === hovered;
-            const showLabel = isSelected || isHovered || node.degree >= 4 || highlight.has(node.path);
+            const showLabel =
+              isSelected || isHovered || highlight.has(node.path) || (grouped ? node.degree >= 8 : node.degree >= 4);
             return (
               <g
                 key={node.path}
@@ -352,8 +500,11 @@ export function Graph({ analysis, selectedFile, highlightFiles, onSelectFile }: 
       <div className="graph-foot">
         <span>
           {nodes.length} of {analysis.files.length} files · {links.length} import edges
+          {grouped && clusters.length ? ` · ${clusters.length} purpose bubbles` : ""}
         </span>
-        <span className="muted">Click to inspect · drag to rearrange · scroll the list for details</span>
+        <span className="muted">
+          Click to inspect · drag to rearrange · {grouped ? "bubbles group by purpose" : "free force layout"}
+        </span>
       </div>
       {hovered && (
         <div className="graph-hover">

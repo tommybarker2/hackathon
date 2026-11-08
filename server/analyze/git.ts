@@ -32,7 +32,7 @@ const empty = (): GitInfo => ({
  * Reads commit history. This is what makes the "archaeology" honest:
  * every historical claim in the UI comes from real `git log` output.
  */
-export async function readGit(root: string): Promise<GitInfo> {
+export async function readGit(root: string, ref?: string): Promise<GitInfo> {
   const gitDir = path.join(root, ".git");
   const exists = await fs
     .stat(gitDir)
@@ -49,9 +49,10 @@ export async function readGit(root: string): Promise<GitInfo> {
         "log",
         "--numstat",
         "--date=short",
-        "--pretty=format:@@@%h|%an|%ad|%s",
+        "--pretty=format:@@@%H|%h|%an|%ad|%s",
         "-n",
         "400",
+        ...(ref ? [ref] : []),
       ],
       { maxBuffer: 32 * 1024 * 1024 },
     );
@@ -63,9 +64,10 @@ export async function readGit(root: string): Promise<GitInfo> {
 
     for (const line of stdout.split("\n")) {
       if (line.startsWith("@@@")) {
-        const [hash, author, date, ...rest] = line.slice(3).split("|");
+        const [sha, hash, author, date, ...rest] = line.slice(3).split("|");
         current = {
           hash: hash ?? "",
+          sha,
           author: author ?? "unknown",
           date: date ?? "",
           subject: rest.join("|").trim(),

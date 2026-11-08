@@ -1,5 +1,6 @@
 import type {
   Analysis,
+  AskHistoryMessage,
   AskResponse,
   FileResponse,
   FlowResponse,
@@ -22,6 +23,7 @@ export function analyzeRepo(input: {
   source: "local" | "github";
   path?: string;
   url?: string;
+  ref?: string;
 }): Promise<{ analysis: Analysis }> {
   return request("/api/analyze", { method: "POST", body: JSON.stringify(input) });
 }
@@ -32,8 +34,15 @@ export function fetchFile(repo: string, filePath: string): Promise<FileResponse>
   );
 }
 
-export function askQuestion(repo: string, question: string): Promise<AskResponse> {
-  return request("/api/ask", { method: "POST", body: JSON.stringify({ repo, question }) });
+export function askQuestion(
+  repo: string,
+  question: string,
+  history: AskHistoryMessage[] = [],
+): Promise<AskResponse> {
+  return request("/api/ask", {
+    method: "POST",
+    body: JSON.stringify({ repo, question, history }),
+  });
 }
 
 export function traceFlow(

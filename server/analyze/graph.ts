@@ -2,7 +2,7 @@ import path from "node:path";
 import type { CallEdge } from "../../shared/types";
 import type { ParsedFile, ParsedSymbol } from "./parse";
 
-const EXTS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".pyi", ".json", ".css", ".go", ".rs", ".java", ".rb"];
+const EXTS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".pyi", ".json", ".css", ".go", ".rs", ".java", ".rb", ".hs", ".lhs", ".hsc"];
 
 function packageName(spec: string): string {
   const clean = spec.replace(/^node:/, "");
@@ -19,6 +19,15 @@ function resolveSpecifier(
 ): string | null {
   let clean = spec.split("?")[0];
   if (!clean) return null;
+
+  if (lang === "hs") {
+    const suffix = clean.replace(/\./g, "/");
+    for (const candidate of paths) {
+      const withoutExt = candidate.replace(/\.(hs|lhs|hsc)$/i, "");
+      if (withoutExt === suffix || withoutExt.endsWith("/" + suffix)) return candidate;
+    }
+    return null;
+  }
 
   let base: string;
   if (clean.startsWith(".")) {

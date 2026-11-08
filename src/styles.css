@@ -98,7 +98,7 @@ code {
     linear-gradient(var(--bg-top), var(--bg-bottom));
 }
 
-.meeple {
+.cloud-logo {
   display: block;
   overflow: visible;
 }
@@ -143,12 +143,6 @@ code {
 .brand-text strong {
   font-size: 17px;
   letter-spacing: 0.01em;
-}
-
-.brand-text span {
-  color: var(--muted);
-  font-size: 11.5px;
-  letter-spacing: 0.04em;
 }
 
 .repo-controls {
@@ -286,7 +280,13 @@ code {
   gap: 12px;
   padding: 9px 22px;
   border-bottom: 2px solid var(--ink);
-  background: var(--paper-2);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--paper-2),
+    var(--paper-2) 11px,
+    #f1f1f1 11px,
+    #f1f1f1 12px
+  );
   flex-wrap: wrap;
   font-size: 12px;
 }
@@ -298,12 +298,6 @@ code {
   background: var(--yellow-soft);
   font-family: var(--mono);
   font-size: 11.5px;
-}
-
-.badges {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
 }
 
 .badge {
@@ -647,6 +641,32 @@ code {
   font-size: 12.5px;
 }
 
+button.commit {
+  width: 100%;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px dashed #e2e2e2;
+  border-radius: 0;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+button.commit:hover:not(:disabled) {
+  background: var(--yellow-soft);
+}
+
+button.commit.current {
+  background: var(--yellow-soft);
+}
+
+button.commit:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
 .commit:last-child {
   border-bottom: 0;
 }
@@ -671,6 +691,48 @@ code {
   color: var(--faint);
   font-size: 11px;
   white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.commit-action {
+  padding: 0 5px;
+  border: 2px solid var(--ink);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+button.commit:hover:not(:disabled) .commit-action {
+  background: var(--yellow);
+}
+
+.snapshot-badge {
+  background: var(--yellow-soft);
+  font-family: var(--mono);
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  cursor: pointer;
+}
+
+.link-button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .notes ul {
@@ -823,6 +885,36 @@ code {
 .graph-link.active {
   stroke: var(--ink);
   stroke-width: 2.2;
+}
+
+.purpose-cluster {
+  pointer-events: none;
+}
+
+.purpose-label-bg {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1.6px;
+}
+
+.purpose-label {
+  fill: var(--ink);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-anchor: middle;
+}
+
+.purpose-count {
+  fill: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.ghost.tiny.active {
+  background: var(--yellow);
+  box-shadow: 2px 2px 0 -1px var(--ink);
 }
 
 .graph-node {
@@ -1017,6 +1109,13 @@ code {
   gap: 10px;
   padding: 16px 16px 10px;
   border-bottom: 2px dashed #dcdcdc;
+  background: repeating-linear-gradient(
+    135deg,
+    #fff,
+    #fff 11px,
+    #f7f7f7 11px,
+    #f7f7f7 12px
+  );
 }
 
 .code-head h3 {
@@ -1377,25 +1476,47 @@ code {
   font-weight: 700;
 }
 
-.suggestions {
+.topic-builder {
   display: flex;
-  gap: 7px;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
+  padding: 8px 11px;
+  border: 2px dashed var(--ink);
+  border-radius: 13px;
+  background: var(--paper-2);
 }
 
-.suggestion {
-  padding: 6px 12px;
-  border-radius: 20px;
+.topic-builder-text {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.topic-builder select {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: min(100%, 520px);
+  padding: 7px 10px;
   border: 2px solid var(--ink);
+  border-radius: 9px;
   background: #fff;
   color: var(--ink);
-  font-size: 12px;
-  text-align: left;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  outline: none;
   box-shadow: 2px 2px 0 -1px var(--ink);
+  text-overflow: ellipsis;
 }
 
-.suggestion:hover:not(:disabled) {
+.topic-builder select:focus {
   background: var(--yellow-soft);
+}
+
+.topic-builder select:disabled {
+  opacity: 0.58;
+  box-shadow: none;
 }
 
 .composer {
@@ -1454,12 +1575,6 @@ code {
   background: var(--yellow-soft);
 }
 
-.presets {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
 .inline-error {
   padding: 10px 12px;
   border-radius: 10px;
@@ -1492,44 +1607,6 @@ code {
   margin: 4px 0 0;
   font-size: 12px;
   max-width: 620px;
-}
-
-.confidence {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 1px;
-  min-width: 120px;
-}
-
-.confidence-value {
-  font-size: 21px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.confidence-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-}
-
-.meter {
-  width: 100%;
-  height: 12px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--ink);
-  margin-top: 5px;
-  overflow: hidden;
-}
-
-.meter-fill {
-  display: block;
-  height: 100%;
-  background: var(--yellow);
-  border-right: 2px solid var(--ink);
 }
 
 .flow {
@@ -1759,10 +1836,10 @@ code {
 .loading-figure {
   flex: none;
   filter: drop-shadow(0 3px 0 rgba(34, 34, 34, 0.12));
-  animation: meeple-bob 2.4s ease-in-out infinite;
+  animation: cloud-bob 2.4s ease-in-out infinite;
 }
 
-@keyframes meeple-bob {
+@keyframes cloud-bob {
   0%,
   100% {
     transform: translateY(0);
@@ -1905,9 +1982,6 @@ code {
 @media (max-width: 720px) {
   .topbar {
     padding: 10px 14px;
-  }
-  .brand-text span {
-    display: none;
   }
   .repo-controls {
     width: 100%;

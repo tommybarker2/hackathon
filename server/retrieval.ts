@@ -86,9 +86,11 @@ export function rankFiles(rec: RepoRecord, tokens: string[]): RankedFile[] {
     const pathText = file.path.toLowerCase();
     const pathTokens = new Set(tokenize(file.path));
     let score = 0;
+    const purpose = file.purpose.toLowerCase();
     for (const token of tokens) {
       if (pathTokens.has(token)) score += 6;
       else if (pathText.includes(token)) score += 2;
+      if (purpose === token) score += 8;
       if (file.summary.toLowerCase().includes(token)) score += 1.4;
       if (file.endpoints.some((e) => e.path.toLowerCase().includes(token))) score += 2.5;
     }

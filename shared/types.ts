@@ -8,6 +8,7 @@ export type Lang =
   | "java"
   | "rb"
   | "rs"
+  | "hs"
   | "css"
   | "html"
   | "json"
@@ -28,6 +29,7 @@ export interface RepoSymbol {
   exported: boolean;
   parent?: string;
   params: string;
+  doc?: string;
   loc: number;
 }
 
@@ -86,11 +88,13 @@ export interface RepoFile {
   lastDate?: string;
   lastAuthor?: string;
   presence: "code" | "config" | "doc" | "style";
+  purpose: string;
   summary: string;
 }
 
 export interface CommitInfo {
   hash: string;
+  sha?: string;
   author: string;
   date: string;
   subject: string;
@@ -125,6 +129,9 @@ export interface Analysis {
     path?: string;
     url?: string;
     branch?: string;
+    ref?: string;
+    refSubject?: string;
+    refDate?: string;
   };
   analyzedAt: string;
   stats: AnalysisStats;
@@ -143,6 +150,11 @@ export interface Citation {
   line: number;
   endLine?: number;
   label: string;
+}
+
+export interface AskHistoryMessage {
+  role: "user" | "assistant";
+  text: string;
 }
 
 export interface AskResponse {

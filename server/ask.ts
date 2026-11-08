@@ -1,4 +1,4 @@
-import type { AskResponse, Citation, RepoFile } from "../shared/types";
+import type { AskHistoryMessage, AskResponse, Citation, RepoFile } from "../shared/types";
 import { buildFlow } from "./flow";
 import { llmAnswer, llmConfigured } from "./llm";
 import {
@@ -245,7 +245,7 @@ function buildContext(rec: RepoRecord, files: RepoFile[], symbols: string[]): st
       .map((line, i) => `${i + 1}: ${line}`)
       .join("\n");
     chunks.push(
-      `\n--- FILE ${file.path} (${file.lang}, ${file.loc} lines) ---\nSummary: ${file.summary}\n${numbered}`,
+      `\n--- FILE ${file.path} (${file.lang}, ${file.loc} lines) ---\nPurpose: ${file.purpose}\nSummary: ${file.summary}\n${numbered}`,
     );
     if (chunks.join("\n").length > 26_000) break;
   }
@@ -280,7 +280,11 @@ function extractCitations(text: string, rec: RepoRecord): Citation[] {
   return citations.slice(0, 12);
 }
 
-export async function answerQuestion(rec: RepoRecord, question: string): Promise<AskResponse> {
+export async function answerQuestion(
+  rec: RepoRecord,
+  question: string,
+  history: AskHistoryMessage[] = [],
+): Promise<AskResponse> {
   const small = smallTalkAnswer(rec, question);
   if (small) return small;
 
@@ -289,7 +293,11 @@ export async function answerQuestion(rec: RepoRecord, question: string): Promise
     if (overview.answer) return overview;
   }
 
-  const tokens = expandTokens(tokenize(question));
+  const recentPrompts = history
+    .filter((message) => message.role === "user")
+    .slice(-2)
+    .map((message) => message.text);
+  const tokens = expandTokens(tokenize([...recentPrompts, question].join(" ")));
   const files = rankFiles(rec, tokens);
   const symbols = rankSymbols(rec, tokens);
   const endpoints = rankEndpoints(rec, tokens);
@@ -300,7 +308,7 @@ export async function answerQuestion(rec: RepoRecord, question: string): Promise
       files.slice(0, 6).map((f) => f.file),
       symbols.slice(0, 8).map((s) => s.symbol.name),
     );
-    const text = await llmAnswer(question, context, rec.analysis.source.label);
+    const text = await llmAnswer(question, context, rec.analysis.source.label, history);
     if (text) {
       return {
         answer: text,
@@ -340,7 +348,7 @@ function localAnswer(
         `Closest starting points:\n` +
         (fallback.length
           ? fallback.map((f) => `- \`${f}\` ${cite(f, 1)}`).join("\n")
-          : "- Open the Architecture tab to browse the graph."),
+          : "- Open the Cloud tab to browse the graph."),
       citations,
       mode: "local",
       topFiles: fallback,

@@ -16,6 +16,9 @@ export interface GithubLoad {
   contributors: { name: string; commits: number }[];
   description?: string;
   stars?: number;
+  refSha?: string;
+  refSubject?: string;
+  refDate?: string;
   truncated: boolean;
 }
 
@@ -28,7 +31,7 @@ const BINARY =
 function headers(): Record<string, string> {
   const base: Record<string, string> = {
     Accept: "application/vnd.github+json",
-    "User-Agent": "code-archaeologist",
+    "User-Agent": "repo_cloud",
   };
   const token = process.env.GITHUB_TOKEN;
   if (token) base.Authorization = `Bearer ${token}`;
@@ -64,7 +67,7 @@ export function parseGithubUrl(input: string): { owner: string; repo: string } {
 const MAX_REMOTE_FILES = 350;
 const MAX_REMOTE_BYTES = 250_000;
 
-export async function loadGithub(input: string): Promise<GithubLoad> {
+export async function loadGithub(input: string, ref?: string): Promise<GithubLoad> {
   const { owner, repo } = parseGithubUrl(input);
   const info = await gh<{
     full_name: string;
@@ -74,16 +77,17 @@ export async function loadGithub(input: string): Promise<GithubLoad> {
   }>(`https://api.github.com/repos/${owner}/${repo}`);
 
   const branch = info.default_branch || "main";
+  const target = ref?.trim() || branch;
   const [tree, commitList] = await Promise.all([
     gh<{ tree: TreeEntry[]; truncated: boolean }>(
-      `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
+      `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(target)}?recursive=1`,
     ),
     gh<
       {
         sha: string;
         commit: { message: string; author: { name: string; date: string } };
       }[]
-    >(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=30&sha=${encodeURIComponent(branch)}`)
+    >(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=30&sha=${encodeURIComponent(target)}`)
       .catch(() => []),
   ]);
 
@@ -106,9 +110,9 @@ export async function loadGithub(input: string): Promise<GithubLoad> {
     while (cursor < candidates.length) {
       const entry = candidates[cursor++];
       const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(
-        branch,
+        target,
       )}/${entry.path.split("/").map(encodeURIComponent).join("/")}`;
-      const res = await fetch(rawUrl, { headers: { "User-Agent": "code-archaeologist" } });
+      const res = await fetch(rawUrl, { headers: { "User-Agent": "repo_cloud" } });
       if (!res.ok) continue;
       const content = await res.text();
       if (content.includes("\u0000")) continue;
@@ -126,6 +130,7 @@ export async function loadGithub(input: string): Promise<GithubLoad> {
 
   const commits: CommitInfo[] = (commitList ?? []).map((c) => ({
     hash: c.sha.slice(0, 7),
+    sha: c.sha,
     author: c.commit.author?.name ?? "unknown",
     date: (c.commit.author?.date ?? "").slice(0, 10),
     subject: (c.commit.message ?? "").split("\n")[0],
@@ -134,6 +139,7 @@ export async function loadGithub(input: string): Promise<GithubLoad> {
 
   const contributors = new Map<string, number>();
   for (const c of commits) contributors.set(c.author, (contributors.get(c.author) ?? 0) + 1);
+  const snapshot = ref ? (commitList ?? [])[0] : undefined;
 
   return {
     files,
@@ -147,6 +153,9 @@ export async function loadGithub(input: string): Promise<GithubLoad> {
       .slice(0, 8),
     description: info.description,
     stars: info.stargazers_count,
+    refSha: snapshot?.sha ?? (ref ? ref.trim() : undefined),
+    refSubject: snapshot?.commit?.message.split("\n")[0],
+    refDate: snapshot?.commit?.author?.date?.slice(0, 10),
     truncated: Boolean(tree.truncated) || candidates.length >= MAX_REMOTE_FILES,
   };
 }

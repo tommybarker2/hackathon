@@ -16,7 +16,7 @@ const RULES: [RegExp, string][] = [
   [/(^|\/)(config|settings|env|constants|vite|tsconfig)\b/i, "configuration and build setup"],
   [/(^|\/)(scripts?|cli|tools?|bin)\b/i, "tooling and scripts"],
   [/(^|\/)(utils?|helpers?|lib|shared|common)\b/i, "shared utilities"],
-  [/(^|\/)(index|main|app|server|bootstrap|manage)\.(ts|tsx|js|jsx|mjs|py|go|rs|rb)$/i, "application startup and wiring"],
+  [/(^|\/)(index|main|app|server|bootstrap|manage)\.(ts|tsx|js|jsx|mjs|py|go|rs|rb|hs|lhs)$/i, "application startup and wiring"],
 ];
 
 export function purposeFor(filePath: string): string {
@@ -25,6 +25,35 @@ export function purposeFor(filePath: string): string {
     if (re.test(normalized)) return label;
   }
   return "supporting application logic";
+}
+
+const TAG_RULES: [RegExp, string][] = [
+  [/(^|\/)(parse|parser|tokenizer|token|lexer|lex|ast|syntax|grammar)([./-]|$)/i, "PARSER"],
+  [/(^|\/)(graph|network|visuali[sz]ation)([./-]|$)/i, "GRAPH"],
+  [/(^|\/)(format|formatter|markdown|render)([./-]|$)/i, "FORMAT"],
+  [/(^|\/)(style|styles|theme|css)([./-]|$)/i, "FORMAT"],
+  [/(^|\/)(ask|answer|retriev|rank|search|chat|question)([./-]|$)/i, "RETRIEVAL"],
+  [/(^|\/)(flow|impact|trace|blast)([./-]|$)/i, "FLOW"],
+  [/(^|\/)(llm|prompt|openai|gemini|completion)([./-]|$)/i, "LLM"],
+  [/(^|\/)(analy|ingest|archae|walk|scan|debt|issue)/i, "ANALYSIS"],
+  [/(^|\/)(db|database|store|model|schema|migration|persist|cache)/i, "DATA"],
+  [/(^|\/)(auth|oauth|session|login|password|jwt|user)/i, "AUTH"],
+  [/(^|\/)(payment|billing|checkout|stripe|invoice|subscription)/i, "PAYMENTS"],
+  [/(^|\/)(api|route|router|controller|handler|endpoint|middleware)/i, "API"],
+  [/(^|\/)(component|view|page|screen|ui|app|main)/i, "UI"],
+  [/(^|\/)(test|spec)/i, "TESTS"],
+  [/(^|\/)(config|settings|env|constant|vite|tsconfig|package)/i, "CONFIG"],
+  [/(^|\/)(script|cli|tool|bin)/i, "TOOLING"],
+  [/(^|\/)(util|helper|lib|shared|common|types)/i, "SHARED"],
+];
+
+/** Short, stable labels used for the purpose bubbles in the Cloud map. */
+export function purposeTagFor(filePath: string): string {
+  const normalized = filePath.toLowerCase();
+  for (const [re, label] of TAG_RULES) {
+    if (re.test(normalized)) return label;
+  }
+  return "CORE";
 }
 
 function firstSentence(text: string): string {

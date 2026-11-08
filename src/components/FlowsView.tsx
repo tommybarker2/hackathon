@@ -1,12 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import type { Analysis, FlowResponse } from "../../shared/types";
 import { traceFlow } from "../api";
+import { symbolTooltip } from "../format";
+import { TopicPicker } from "./TopicPicker";
 
 interface Props {
   analysis: Analysis;
   seed?: { symbolId?: string; query?: string; nonce: number };
   onOpenFile: (path: string, line?: number) => void;
   onHighlight: (files: string[], label: string) => void;
+}
+
+function flowStepTooltip(analysis: Analysis, step: FlowResponse["steps"][number]): string {
+  const symbol = analysis.symbols.find((candidate) =>
+    step.symbolId
+      ? candidate.id === step.symbolId
+      : candidate.name === step.name && candidate.file === step.file,
+  );
+  return symbol
+    ? symbolTooltip(symbol)
+    : `${step.name} — ${step.kind} in ${step.file}:${step.line}`;
 }
 
 export function FlowsView({ analysis, seed, onOpenFile, onHighlight }: Props) {
@@ -67,13 +80,6 @@ export function FlowsView({ analysis, seed, onOpenFile, onHighlight }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed?.nonce]);
 
-  const presets = [
-    firstEndpoint ? `${firstEndpoint.method} ${firstEndpoint.path}` : null,
-    "How does the analysis pipeline work?",
-    "Where is data loaded and transformed?",
-    "How is the response rendered?",
-  ].filter((value): value is string => Boolean(value) && value !== query);
-
   return (
     <div className="flow-view">
       <div className="ask-head">
@@ -104,21 +110,15 @@ export function FlowsView({ analysis, seed, onOpenFile, onHighlight }: Props) {
         </button>
       </form>
 
-      <div className="presets">
-        {presets.slice(0, 4).map((preset) => (
-          <button
-            key={preset}
-            type="button"
-            className="suggestion"
-            onClick={() => {
-              setQuery(preset);
-              void run(preset);
-            }}
-          >
-            {preset}
-          </button>
-        ))}
-      </div>
+      <TopicPicker
+        analysis={analysis}
+        actionLabel="Trace"
+        disabled={busy}
+        onPick={(question, symbolId) => {
+          setQuery(question);
+          void run(question, symbolId);
+        }}
+      />
 
       {error && <div className="inline-error">{error}</div>}
 
@@ -129,13 +129,6 @@ export function FlowsView({ analysis, seed, onOpenFile, onHighlight }: Props) {
               <p className="eyebrow">Traced path</p>
               <h3>{flow.title}</h3>
               <p className="muted">{flow.explanation}</p>
-            </div>
-            <div className="confidence">
-              <span className="confidence-value">{Math.round(flow.confidence * 100)}%</span>
-              <span className="confidence-label">confidence</span>
-              <span className="meter">
-                <span className="meter-fill" style={{ width: `${flow.confidence * 100}%` }} />
-              </span>
             </div>
           </div>
 
@@ -152,6 +145,7 @@ export function FlowsView({ analysis, seed, onOpenFile, onHighlight }: Props) {
                       type="button"
                       onClick={() => onOpenFile(step.file, step.line)}
                       className="flow-button"
+                      title={flowStepTooltip(analysis, step)}
                     >
                       <span className="flow-index">{index + 1}</span>
                       <span className="flow-body">

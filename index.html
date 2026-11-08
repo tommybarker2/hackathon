@@ -3,8 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Code Archaeologist — Understand any codebase</title>
-    <meta name="description" content="Map an unfamiliar repository, ask questions backed by real source lines, and trace execution flows." />
+    <title>repo_cloud: Understand any codebase</title>
+    <meta name="description" content="The Repo Cloud maps an unfamiliar repository into purpose bubbles, answers questions backed by real source lines, and traces execution flows." />
+    <script>
+      // Apply the saved theme before first paint so dark mode does not flash white.
+      try {
+        var savedTheme = localStorage.getItem("ca-theme");
+        if (!savedTheme) {
+          savedTheme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        if (savedTheme === "dark") document.documentElement.dataset.theme = "dark";
+      } catch (error) {}
+    </script>
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5l8.5 4.7v9.6L12 21.5l-8.5-4.7V7.2L12 2.5z' fill='none' stroke='%23e3b341' stroke-width='1.4'/%3E%3Ccircle cx='12' cy='12' r='2.1' fill='%23e3b341'/%3E%3C/svg%3E"

@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import type {
   Analysis,
@@ -10,13 +11,15 @@ import { findIssues } from "./debt";
 import { readGit } from "./git";
 import { loadGithub } from "./github";
 import { parseFile, type ParsedFile } from "./parse";
-import { summarizeFile, purposeFor } from "./summarize";
+import { loadLocalSnapshot, type SnapshotCommit } from "./snapshot";
+import { summarizeFile, purposeFor, purposeTagFor } from "./summarize";
 import { isCodeLang, isTestFile, toPosix, walkLocal, type SourceFile } from "./walk";
 
 export interface AnalyzeOptions {
   source: "local" | "github";
   path?: string;
   url?: string;
+  ref?: string;
 }
 
 export interface AnalyzeResult {
@@ -25,7 +28,7 @@ export interface AnalyzeResult {
   parsed: Map<string, ParsedFile>;
 }
 
-const ENTRY_BASENAMES = /^(index|main|app|server|bootstrap|manage|cli|__main__|mod)\.(ts|tsx|js|jsx|mjs|py|go|rs|rb)$/i;
+const ENTRY_BASENAMES = /^(index|main|app|server|bootstrap|manage|cli|__main__|mod)\.(ts|tsx|js|jsx|mjs|py|go|rs|rb|hs|lhs)$/i;
 
 function slug(text: string): string {
   return text
@@ -43,6 +46,22 @@ function presenceFor(lang: string): RepoFile["presence"] {
   return "config";
 }
 
+async function localRepoLabel(rootPath: string, files: SourceFile[]): Promise<string> {
+  const fallback = path.basename(rootPath) || toPosix(rootPath);
+  let raw = files.find((file) => file.path === "package.json")?.content;
+  if (!raw) {
+    raw = await fs.readFile(path.join(rootPath, "package.json"), "utf8").catch(() => undefined);
+  }
+  if (!raw) return fallback;
+  try {
+    const name = (JSON.parse(raw) as { name?: unknown }).name;
+    if (typeof name === "string" && name.trim()) return name.trim();
+  } catch {
+    // Fall back to the folder name when package.json is not valid JSON.
+  }
+  return fallback;
+}
+
 export async function analyzeRepository(options: AnalyzeOptions): Promise<AnalyzeResult> {
   let files: SourceFile[] = [];
   let label: string;
@@ -54,11 +73,15 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Analyz
   let url: string | undefined;
   let rootPath: string | undefined;
   let fileHistory = new Map<string, { commits: number; churn: number; lastCommit?: string; lastDate?: string; lastAuthor?: string }>();
+  let snapshot: SnapshotCommit | undefined;
+  let refLabel: string | undefined;
+  let refSubject: string | undefined;
+  let refDate: string | undefined;
   const notes: string[] = [];
 
   if (options.source === "github") {
     if (!options.url) throw new Error("A GitHub repository URL is required.");
-    const remote = await loadGithub(options.url);
+    const remote = await loadGithub(options.url, options.ref);
     files = remote.files;
     label = remote.label;
     branch = remote.branch;
@@ -67,20 +90,44 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Analyz
     commits = remote.commits;
     contributors = remote.contributors;
     truncated = remote.truncated;
-    notes.push("Remote analysis reads the default branch through the GitHub API (capped at 350 source files).");
+    if (options.ref) {
+      refLabel = remote.refSha?.slice(0, 7) ?? options.ref.slice(0, 7);
+      refSubject = remote.refSubject;
+      refDate = remote.refDate;
+      notes.push(
+        `Analyzed commit ${refLabel}${remote.refSubject ? ` — ${remote.refSubject}` : ""} through the GitHub API (capped at 350 source files).`,
+      );
+    } else {
+      notes.push("Remote analysis reads the default branch through the GitHub API (capped at 350 source files).");
+    }
     notes.push("Per-file commit counts and churn are only available when analyzing a local clone.");
   } else {
     rootPath = path.resolve(options.path || process.cwd());
-    const walked = await walkLocal(rootPath);
-    files = walked.files;
-    truncated = walked.truncated;
-    label = path.basename(rootPath) || toPosix(rootPath);
-    const git = await readGit(rootPath);
+    if (options.ref) {
+      const loaded = await loadLocalSnapshot(rootPath, options.ref);
+      snapshot = loaded.commit;
+      files = loaded.files;
+      truncated = loaded.truncated;
+      refLabel = loaded.commit.short;
+      refSubject = loaded.commit.subject;
+      refDate = loaded.commit.date;
+    } else {
+      const walked = await walkLocal(rootPath);
+      files = walked.files;
+      truncated = walked.truncated;
+    }
+    label = await localRepoLabel(rootPath, files);
+    const git = await readGit(rootPath, snapshot?.sha);
     gitAvailable = git.available;
     commits = git.commits.slice(0, 20);
     contributors = git.contributors;
     fileHistory = git.files;
-    notes.push(`Analyzed from disk at ${rootPath}.`);
+    notes.push("Analyzed from the local working tree.");
+    if (snapshot) {
+      notes.push(
+        `Reading commit ${snapshot.short} (${snapshot.subject}, ${snapshot.date}); uncommitted changes are excluded.`,
+      );
+    }
     if (!git.available) {
       notes.push("No git history found — historical archaeology is unavailable for this source.");
     }
@@ -107,6 +154,7 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Analyz
         exported: symbol.exported,
         parent: symbol.parent,
         params: symbol.params,
+        doc: symbol.doc,
         loc: symbol.loc,
       });
     }
@@ -168,6 +216,7 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Analyz
       lastDate: history?.lastDate,
       lastAuthor: history?.lastAuthor,
       presence: presenceFor(file.lang),
+      purpose: purposeTagFor(file.path),
       summary: summarizeFile({
         path: file.path,
         doc: file.doc,
@@ -198,6 +247,9 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Analyz
       path: rootPath,
       url,
       branch,
+      ref: refLabel,
+      refSubject,
+      refDate,
     },
     analyzedAt: new Date().toISOString(),
     stats: {

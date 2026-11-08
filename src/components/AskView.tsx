@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { Analysis, Citation } from "../../shared/types";
+import { useEffect, useRef, useState } from "react";
+import type { Analysis, AskHistoryMessage, Citation } from "../../shared/types";
 import { askQuestion } from "../api";
 import { Markdown } from "./Markdown";
+import { TopicPicker } from "./TopicPicker";
 
 interface Props {
   analysis: Analysis;
@@ -33,16 +34,6 @@ export function AskView({ analysis, pending, onOpenFile }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lastPending = useRef(0);
 
-  const suggestions = useMemo(() => {
-    const endpoints = analysis.files.flatMap((f) => f.endpoints).slice(0, 3);
-    const list = endpoints.map((e) => `What happens when ${e.method} ${e.path} is called?`);
-    if (analysis.files.some((f) => /analy/i.test(f.path))) {
-      list.push("How does the analysis pipeline work?");
-    }
-    list.push("Where is application state maintained?");
-    return list.slice(0, 4);
-  }, [analysis]);
-
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
@@ -51,10 +42,15 @@ export function AskView({ analysis, pending, onOpenFile }: Props) {
     const trimmed = question.trim();
     if (!trimmed || busy) return;
     setInput("");
+    const history: AskHistoryMessage[] = messages
+      .slice(1)
+      .filter((message) => !message.error)
+      .slice(-8)
+      .map((message) => ({ role: message.role, text: message.text }));
     setMessages((prev) => [...prev, { role: "user", text: trimmed }]);
     setBusy(true);
     try {
-      const res = await askQuestion(analysis.id, trimmed);
+      const res = await askQuestion(analysis.id, trimmed, history);
       setMessages((prev) => [
         ...prev,
         { role: "assistant", text: res.answer, citations: res.citations, mode: res.mode },
@@ -136,19 +132,12 @@ export function AskView({ analysis, pending, onOpenFile }: Props) {
         )}
       </div>
 
-      <div className="suggestions">
-        {suggestions.map((suggestion) => (
-          <button
-            key={suggestion}
-            type="button"
-            className="suggestion"
-            disabled={busy}
-            onClick={() => void send(suggestion)}
-          >
-            {suggestion}
-          </button>
-        ))}
-      </div>
+      <TopicPicker
+        analysis={analysis}
+        actionLabel="Ask"
+        disabled={busy}
+        onPick={(question) => void send(question)}
+      />
 
       <form
         className="composer"

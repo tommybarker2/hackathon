@@ -1,13 +1,22 @@
 import { createServer } from "node:http";
+import { loadEnvFile } from "node:process";
 import path from "node:path";
 import { getRequestListener } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import type { AskHistoryMessage } from "../shared/types";
 import { analyzeRepository } from "./analyze/index";
 import { answerQuestion } from "./ask";
 import { buildFlow, buildImpact } from "./flow";
 import { llmConfigured, llmModel, llmProvider } from "./llm";
 import { putRepo, requireRepo } from "./store";
+
+// Optional local secrets. `.env` is gitignored; an absent file is normal.
+try {
+  loadEnvFile();
+} catch {
+  // No .env in this checkout.
+}
 
 const app = new Hono();
 
@@ -28,12 +37,14 @@ app.post("/api/analyze", async (c) => {
       source?: "local" | "github";
       path?: string;
       url?: string;
+      ref?: string;
     };
     const source = body.source === "github" ? "github" : "local";
     const result = await analyzeRepository({
       source,
       path: body.path,
       url: body.url,
+      ref: typeof body.ref === "string" ? body.ref.trim().slice(0, 200) : undefined,
     });
     putRepo(result);
     return c.json({ analysis: result.analysis });
@@ -58,11 +69,15 @@ app.get("/api/repos/:id/file", (c) => {
 
 app.post("/api/ask", async (c) => {
   try {
-    const body = (await c.req.json()) as { repo?: string; question?: string };
+    const body = (await c.req.json()) as {
+      repo?: string;
+      question?: string;
+      history?: unknown;
+    };
     const repo = requireRepo(body.repo);
     const question = (body.question ?? "").trim();
     if (!question) return c.json({ error: "Ask a question about the repository." }, 400);
-    const result = await answerQuestion(repo, question);
+    const result = await answerQuestion(repo, question, parseHistory(body.history));
     return c.json(result);
   } catch (error) {
     return c.json({ error: errorMessage(error) }, 400);
@@ -141,9 +156,24 @@ if (!isProduction) {
 }
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`[code-archaeologist] http://0.0.0.0:${port} (${isProduction ? "production" : "dev"})`);
-  console.log(`[code-archaeologist] LLM answers: ${llmConfigured() ? "enabled" : "deterministic engine"}`);
+  console.log(`[repo_cloud] http://0.0.0.0:${port} (${isProduction ? "production" : "dev"})`);
+  console.log(`[repo_cloud] LLM answers: ${llmConfigured() ? "enabled" : "deterministic engine"}`);
 });
+
+function parseHistory(raw: unknown): AskHistoryMessage[] {
+  if (!Array.isArray(raw)) return [];
+  const history: AskHistoryMessage[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const candidate = item as { role?: unknown; text?: unknown };
+    if (candidate.role !== "user" && candidate.role !== "assistant") continue;
+    if (typeof candidate.text !== "string") continue;
+    const text = candidate.text.trim().slice(0, 2000);
+    if (!text) continue;
+    history.push({ role: candidate.role, text });
+  }
+  return history.slice(-8);
+}
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;

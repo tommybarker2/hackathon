@@ -11,6 +11,7 @@ export interface ParsedSymbol {
   parent?: string;
   params: string;
   body: string;
+  doc?: string;
   calls: string[];
   loc: number;
 }
@@ -290,8 +291,37 @@ function extractPyImports(masked: string): string[] {
   return [...specs];
 }
 
+function extractHsImports(masked: string): string[] {
+  const specs = new Set<string>();
+  const re =
+    /^\s*import\s+(?:\{-#\s*SOURCE\s*#-\}\s*)?(?:safe\s+)?(?:qualified\s+)?(?:"[^"]+"\s+)?([A-Z][\w.]*)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(masked))) {
+    if (m[1]) specs.add(m[1]);
+  }
+  return [...specs];
+}
+
 function docComment(content: string, lang: Lang): string {
   const head = content.slice(0, 4000);
+  if (lang === "hs") {
+    const block = head.match(/^\s*\{-\s*\|?([\s\S]{0,400}?)-\}/);
+    if (block) {
+      return block[1]
+        .split("\n")
+        .map((l) => l.replace(/^\s*\|?\s?/, "").trim())
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 320);
+    }
+    const collected: string[] = [];
+    for (const line of head.split("\n")) {
+      const m = line.match(/^\s*--\s*\|?\s*(.*)$/);
+      if (m) collected.push(m[1].trim());
+      else if (collected.length) break;
+    }
+    return collected.join(" ").slice(0, 320);
+  }
   if (lang === "py") {
     const m = head.match(/^\s*(?:"""|''')([\s\S]{0,400}?)(?:"""|''')/);
     return m ? m[1].trim().slice(0, 320) : "";
@@ -326,14 +356,148 @@ function nextRoutePath(filePath: string): string | null {
   return null;
 }
 
+/** Masks Haskell line and nested block comments without changing line numbers. */
+function maskHsComments(src: string): string {
+  let out = "";
+  let i = 0;
+  let block = 0;
+  let line = false;
+  let string = false;
+  while (i < src.length) {
+    const c = src[i];
+    const n = src[i + 1];
+    if (line) {
+      out += c === "\n" ? "\n" : " ";
+      if (c === "\n") line = false;
+      i++;
+      continue;
+    }
+    if (block > 0) {
+      if (c === "{" && n === "-") {
+        block++;
+        out += "  ";
+        i += 2;
+        continue;
+      }
+      if (c === "-" && n === "}") {
+        block--;
+        out += "  ";
+        i += 2;
+        continue;
+      }
+      out += c === "\n" ? "\n" : " ";
+      i++;
+      continue;
+    }
+    if (string) {
+      out += c;
+      if (c === "\\") {
+        out += n ?? "";
+        i += 2;
+        continue;
+      }
+      if (c === '"') string = false;
+      i++;
+      continue;
+    }
+    if (c === '"') {
+      string = true;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === "-" && n === "-") {
+      line = true;
+      out += "  ";
+      i += 2;
+      continue;
+    }
+    if (c === "{" && n === "-") {
+      block = 1;
+      out += "  ";
+      i += 2;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+function escapeRe(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Haskell declarations are newline-delimited; keep indented continuations. */
+function hsEnd(lines: string[], start: number, name?: string): number {
+  let last = start;
+  const head = name ? new RegExp(`^${escapeRe(name)}\\b`) : null;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    const indented = /^[ \t]/.test(line);
+    if (!indented && head && head.test(line)) {
+      last = i;
+      continue;
+    }
+    if (!indented && !/^[|),\]}]|^(where|deriving|in)\b/.test(line)) break;
+    last = i;
+  }
+  return last + 1;
+}
+
+function symbolDoc(lines: string[], start: number, lang: Lang): string {
+  if (lang === "py") {
+    const body = lines.slice(start + 1, start + 12).join("\n");
+    const triple = body.match(/^\s*(?:"""|''')([\s\S]*?)(?:"""|''')/);
+    if (triple) return triple[1].replace(/\s+/g, " ").trim().slice(0, 240);
+  }
+
+  const collected: string[] = [];
+  for (let i = start - 1; i >= Math.max(0, start - 14); i--) {
+    const trimmed = lines[i]?.trim() ?? "";
+    if (!trimmed) {
+      if (collected.length) break;
+      continue;
+    }
+    const lineComment = trimmed.match(/^(?:\/\/|#|--)\s?(.*)$/);
+    if (lineComment) {
+      collected.unshift(lineComment[1]);
+      continue;
+    }
+    if (trimmed.startsWith("*") || trimmed.startsWith("/*") || trimmed.startsWith("*/")) {
+      const cleaned = trimmed
+        .replace(/^\/\*+/, "")
+        .replace(/\*\/$/, "")
+        .replace(/^\*+\s?/, "")
+        .trim();
+      if (cleaned) collected.unshift(cleaned);
+      if (trimmed.startsWith("/*")) break;
+      continue;
+    }
+    break;
+  }
+
+  return collected
+    .filter((line) => !/^@\w+/.test(line))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+}
+
 export function parseFile(filePath: string, content: string, lang: Lang): ParsedFile {
   const lines = content.split("\n");
-  const maskedContent = maskSource(content, { hash: lang === "py" || lang === "rb" });
+  const maskedContent =
+    lang === "hs"
+      ? maskHsComments(content)
+      : maskSource(content, { hash: lang === "py" || lang === "rb" });
   const maskedLines = maskedContent.split("\n");
-  const braceSafeLines = maskSource(content, {
-    hash: lang === "py" || lang === "rb",
-    strings: true,
-  }).split("\n");
+  const braceSafeLines = (
+    lang === "hs"
+      ? maskHsComments(content)
+      : maskSource(content, { hash: lang === "py" || lang === "rb", strings: true })
+  ).split("\n");
 
   const symbols: ParsedSymbol[] = [];
   const exportNames = new Set<string>();
@@ -348,10 +512,12 @@ export function parseFile(filePath: string, content: string, lang: Lang): Parsed
     const end = Math.max(start, input.endLine - 1);
     const body =
       input.body ?? lines.slice(start, Math.min(lines.length, end + 1)).join("\n").slice(0, 4000);
+    const doc = symbolDoc(lines, start, lang);
     symbols.push({
       ...input,
       id,
       body,
+      doc,
       calls: extractCalls(body, input.name, lang),
       loc: Math.max(1, input.endLine - input.line + 1),
     });
@@ -459,6 +625,99 @@ export function parseFile(filePath: string, content: string, lang: Lang): Parsed
         }
       }
     }
+  } else if (lang === "hs") {
+    const header = content
+      .slice(0, 8000)
+      .match(/^\s*module\s+[A-Z][\w.]*\s*(?:\(([\s\S]*?)\))?\s*where/m);
+    const listed = new Set<string>();
+    if (header?.[1]) {
+      for (const m of header[1].matchAll(/([a-z_][\w']*|[A-Z][\w']*)/g)) listed.add(m[1]);
+    }
+    const restricted = Boolean(header?.[1]);
+    const exported = (name: string) => !restricted || listed.has(name);
+    const reserved = new Set([
+      "module",
+      "import",
+      "data",
+      "newtype",
+      "type",
+      "class",
+      "instance",
+      "deriving",
+      "where",
+      "let",
+      "in",
+      "do",
+      "case",
+      "of",
+      "if",
+      "then",
+      "else",
+      "foreign",
+      "default",
+      "infix",
+      "infixl",
+      "infixr",
+    ]);
+
+    for (let i = 0; i < maskedLines.length; i++) {
+      const line = maskedLines[i];
+      if (!line || !line.trim() || /^\s/.test(line)) continue;
+
+      const decl = line.match(
+        /^(data|newtype|type|class)\s+(?:family\s+)?(?:\([^)]*\)\s*=>\s*)?([A-Z][\w']*)/,
+      );
+      if (decl) {
+        addSymbol({
+          name: decl[2],
+          kind: "class",
+          file: filePath,
+          line: i + 1,
+          endLine: hsEnd(lines, i, decl[2]),
+          exported: exported(decl[2]),
+          params: "",
+        });
+        continue;
+      }
+
+      const sig = line.match(/^([a-z_][\w']*)\s*::\s*(.*)$/);
+      if (sig) {
+        const name = sig[1];
+        let definition = i;
+        for (let j = i + 1; j < Math.min(i + 8, lines.length); j++) {
+          const next = lines[j];
+          if (!next.trim()) continue;
+          if (new RegExp(`^${escapeRe(name)}\\b`).test(next)) {
+            definition = j;
+            break;
+          }
+          if (!/^\s/.test(next)) break;
+        }
+        addSymbol({
+          name,
+          kind: "function",
+          file: filePath,
+          line: i + 1,
+          endLine: hsEnd(lines, definition, name),
+          exported: exported(name),
+          params: sig[2].split("->")[0].replace(/\s+/g, " ").trim().slice(0, 120),
+        });
+        continue;
+      }
+
+      const def = line.match(/^([a-z_][\w']*)\b[^=]*=/);
+      if (def && !reserved.has(def[1]) && !symbols.some((s) => s.name === def[1])) {
+        addSymbol({
+          name: def[1],
+          kind: "function",
+          file: filePath,
+          line: i + 1,
+          endLine: hsEnd(lines, i, def[1]),
+          exported: exported(def[1]),
+          params: "",
+        });
+      }
+    }
   } else if (lang === "py") {
     for (let i = 0; i < maskedLines.length; i++) {
       const line = maskedLines[i];
@@ -531,7 +790,7 @@ export function parseFile(filePath: string, content: string, lang: Lang): Parsed
   }
 
   // ---------- imports ----------
-  const rawImports =
+  const rawImports = lang === "hs" ? extractHsImports(maskedContent) :
     lang === "py"
       ? extractPyImports(maskedContent)
       : ["ts", "tsx", "js", "jsx"].includes(lang)

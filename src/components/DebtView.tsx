@@ -23,7 +23,7 @@ export function DebtView({ analysis, onOpenFile }: Props) {
     <div className="debt">
       <div className="ask-head">
         <div>
-          <h2>Technical debt</h2>
+          <h2>Warnings</h2>
           <p className="muted">
             Structural smells found by static rules — each one links to the evidence in source.
           </p>

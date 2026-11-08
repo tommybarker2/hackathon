@@ -1,4 +1,5 @@
 import type { Analysis, ImpactResponse } from "../../shared/types";
+import { symbolTooltip } from "../format";
 import { Graph } from "./Graph";
 
 interface Props {
@@ -28,10 +29,10 @@ export function MapView({
     <div className="map-view">
       <div className="ask-head compact">
         <div>
-          <h2>Architecture</h2>
+          <h2>Cloud</h2>
           <p className="muted">
-            Files are nodes, imports are edges. Node size follows file size; the map is built from
-            real import statements.
+            Files gather in purpose bubbles — parser, graph, format, UI — with import lines showing
+            how those areas connect. Node size follows file size.
           </p>
         </div>
         {highlight && (
@@ -58,7 +59,9 @@ export function MapView({
             <div className="impact-head">
               <div>
                 <p className="eyebrow">Blast radius</p>
-                <h3>{impact.symbol?.name ?? "No symbol"}</h3>
+                <h3 title={impact.symbol ? symbolTooltip(impact.symbol) : undefined}>
+                  {impact.symbol?.name ?? "No symbol"}
+                </h3>
               </div>
               <button type="button" className="icon-button" onClick={onClearImpact}>
                 ✕
@@ -76,6 +79,7 @@ export function MapView({
                       type="button"
                       className="chip clickable"
                       onClick={() => onOpenFile(symbol.file, symbol.line)}
+                      title={symbolTooltip(symbol)}
                     >
                       {symbol.name}
                     </button>
