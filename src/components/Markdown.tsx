@@ -88,10 +88,16 @@ export function Markdown({ text, onCitation }: Props) {
       ordered.push(numbered[1]);
       continue;
     }
-    if (line.startsWith("### ")) {
+    const heading = line.match(/^(#{1,4})\s+(.*)$/);
+    if (heading) {
       flush();
+      const content = inline(heading[2], onCitation, `h-${blocks.length}`);
       blocks.push(
-        <h4 key={`h-${blocks.length}`}>{inline(line.slice(4), onCitation, `h-${blocks.length}`)}</h4>,
+        heading[1].length <= 2 ? (
+          <h3 key={`h-${blocks.length}`}>{content}</h3>
+        ) : (
+          <h4 key={`h-${blocks.length}`}>{content}</h4>
+        ),
       );
       continue;
     }

@@ -259,19 +259,22 @@ function buildContext(rec: RepoRecord, files: RepoFile[], symbols: string[]): st
 function extractCitations(text: string, rec: RepoRecord): Citation[] {
   const citations: Citation[] = [];
   const seen = new Set<string>();
-  const re = /\[([\w./\-@()+ ]+):(\d+)(?:-(\d+))?\]/g;
+  // Models cite single lines, ranges (14-22) and several locations inside one
+  // bracket ([a.ts:3, b.ts:9]); scan pairs instead of one bracket-shaped match.
+  const re = /([A-Za-z0-9_./@()+-]+\.[A-Za-z0-9]+):(\d+)(?:\s*[-–]\s*(\d+))?/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text))) {
-    const file = match[1].trim();
-    if (!rec.contents.has(file)) continue;
-    const key = `${file}:${match[2]}`;
+    const file = match[1].replace(/^\.\//, "");
+    const line = Number(match[2]);
+    if (!Number.isFinite(line) || !rec.contents.has(file)) continue;
+    const key = `${file}:${line}`;
     if (seen.has(key)) continue;
     seen.add(key);
     citations.push({
       file,
-      line: Number(match[2]),
+      line,
       endLine: match[3] ? Number(match[3]) : undefined,
-      label: `${file}:${match[2]}`,
+      label: `${file}:${line}`,
     });
   }
   return citations.slice(0, 12);

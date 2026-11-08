@@ -44,7 +44,7 @@ GEMINI_API_KEY=... npm run dev
 OPENAI_API_KEY=sk-... OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_MODEL=gpt-4o-mini npm run dev
 ```
 
-Gemini defaults to `gemini-3.8-flash`; override it with `OPENAI_MODEL`. Greetings, thanks and meta questions are answered conversationally with no citations, and code answers cite retrieved `file:line` locations. The badge in the header shows which engine answered. Any LLM failure silently falls back to the deterministic engine. Never commit a key.
+Gemini defaults to the fast `gemini-3.5-flash-lite`; set `OPENAI_MODEL=gemini-3.8-flash` for the stronger reasoning model, which is noticeably slower. Override the endpoint with `OPENAI_BASE_URL` if needed. Greetings, thanks and meta questions are answered conversationally with no citations, and code answers cite retrieved `file:line` locations. The badge in the header shows which engine answered. Any LLM failure silently falls back to the deterministic engine. Never commit a key.
 
 ### Optional GitHub token
 

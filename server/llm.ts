@@ -1,5 +1,7 @@
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
-const GEMINI_DEFAULT_MODEL = "gemini-3.8-flash";
+// Flash-lite answers in about a second; 3.8-flash spends its token budget on
+// hidden reasoning (and long waits), so it is an opt-in via OPENAI_MODEL.
+const GEMINI_DEFAULT_MODEL = "gemini-3.5-flash-lite";
 
 export type LlmProvider = "openai" | "gemini";
 
@@ -51,7 +53,7 @@ export async function llmAnswer(
   const model = llmModel();
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
+  const timer = setTimeout(() => controller.abort(), 45_000);
 
   try {
     const res = await fetch(`${baseUrl}/chat/completions`, {
@@ -75,13 +77,19 @@ export async function llmAnswer(
       signal: controller.signal,
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const detail = (await res.text()).slice(0, 300);
+      console.warn(`[llm] ${provider} ${res.status} ${res.statusText}: ${detail}`);
+      return null;
+    }
     const data = (await res.json()) as {
       choices?: { message?: { content?: string } }[];
     };
     const content = data.choices?.[0]?.message?.content;
     return content?.trim() ? content.trim() : null;
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    console.warn(`[llm] ${provider} request failed: ${message}`);
     return null;
   } finally {
     clearTimeout(timer);
