@@ -1,6 +1,7 @@
 node_modules/
 dist/
 public/repo-cloud-static.json
+public/examples/
 .logs/
 *.log
 .env

@@ -233,21 +233,19 @@ export default function App() {
             </span>
             Demo
           </button>
-          {!isStaticDemo && (
-            <button
-              type="button"
-              className="ghost examples-button"
-              onClick={() => setExamplesOpen(true)}
-            >
-              Examples
-            </button>
-          )}
+          <button
+            type="button"
+            className="ghost examples-button"
+            onClick={() => setExamplesOpen(true)}
+          >
+            Examples
+          </button>
           {isStaticDemo ? (
             <span
               className="engine-badge"
               title="GitHub Pages is static-only. This build ships one baked analysis and runs the deterministic engine in the browser."
             >
-              Pages demo · baked analysis
+              Pages demo · baked examples
             </span>
           ) : (
             <>
@@ -416,6 +414,7 @@ export default function App() {
                     onTrace={() => setTab("flows")}
                     onLoadCommit={loadCommit}
                     busy={busy}
+                    staticMode={isStaticDemo}
                   />
                 </div>
               )}
@@ -491,6 +490,7 @@ export default function App() {
       <ExamplePicker
         open={examplesOpen}
         busy={busy}
+        staticMode={isStaticDemo}
         onClose={() => setExamplesOpen(false)}
         onPick={loadExample}
       />

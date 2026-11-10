@@ -61,13 +61,13 @@ npm start
 
 ## GitHub Pages
 
-GitHub Pages is static hosting, so it cannot run the Hono/Node backend. The Pages build therefore ships one baked analysis of this repository and runs the same deterministic retrieval, flow and impact code in the browser:
+GitHub Pages is static hosting, so it cannot run the Hono/Node backend. The Pages build therefore ships a baked analysis of this repository and all five GitHub examples, and runs the same deterministic retrieval, flow and impact code in the browser:
 
 ```bash
 npm run build:pages   # writes site/ with a relative base path
 ```
 
-The live site is <https://tommybarker2.github.io/repo_cloud/>. It redirects into `/site/`, where the Cloud map, source viewer, cited Q&A, flows and blast-radius analysis work with no server. Live local-path and GitHub imports still require `npm run dev`; the Pages demo intentionally shows only the baked self-analysis.
+The live site is <https://tommybarker2.github.io/repo_cloud/>. It redirects into `/site/`, where the Examples picker, Cloud map, source viewer, cited Q&A, flows and blast-radius analysis work with no server. Live local-path and arbitrary GitHub imports still require `npm run dev`; the Pages demo is limited to the six baked repositories.
 
 ## Demo script (2–3 minutes)
 

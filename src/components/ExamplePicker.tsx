@@ -4,11 +4,12 @@ import { EXAMPLES, type ExampleRepo } from "../examples";
 interface Props {
   open: boolean;
   busy: boolean;
+  staticMode?: boolean;
   onClose: () => void;
   onPick: (example: ExampleRepo) => void;
 }
 
-export function ExamplePicker({ open, busy, onClose, onPick }: Props) {
+export function ExamplePicker({ open, busy, staticMode = false, onClose, onPick }: Props) {
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -41,8 +42,9 @@ export function ExamplePicker({ open, busy, onClose, onPick }: Props) {
             <p className="eyebrow">Example expeditions</p>
             <h2 id="examples-title">Start with a repository</h2>
             <p>
-              Load a baked-in example instantly, or paste any public GitHub URL into the source bar
-              — it switches modes automatically. Everything is read from real files, never mocked.
+              {staticMode
+                ? "Load one of the repositories analyzed into this static build. Each snapshot comes from real source files, never mocked."
+                : "Load a baked-in example instantly, or paste any public GitHub URL into the source bar — it switches modes automatically. Everything is read from real files, never mocked."}
             </p>
           </div>
           <button
@@ -85,8 +87,9 @@ export function ExamplePicker({ open, busy, onClose, onPick }: Props) {
         </div>
 
         <p className="example-note">
-          Public GitHub repositories only. Unauthenticated imports share a 60 requests/hour API
-          limit; set <code>GITHUB_TOKEN</code> to raise it.
+          {staticMode
+            ? "Static Pages demo: these six snapshots were analyzed at build time. Run the app locally for arbitrary GitHub or local imports."
+            : "Public GitHub repositories only. Unauthenticated imports share a 60 requests/hour API limit; set GITHUB_TOKEN to raise it."}
         </p>
       </div>
     </div>

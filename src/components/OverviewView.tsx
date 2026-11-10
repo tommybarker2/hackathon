@@ -9,6 +9,7 @@ interface Props {
   onTrace: () => void;
   onLoadCommit: (commit: CommitInfo) => void;
   busy: boolean;
+  staticMode?: boolean;
 }
 
 export function OverviewView({
@@ -18,6 +19,7 @@ export function OverviewView({
   onTrace,
   onLoadCommit,
   busy,
+  staticMode = false,
 }: Props) {
   const fanIn = useMemo(() => {
     const map = new Map<string, number>();
@@ -205,52 +207,54 @@ export function OverviewView({
         </section>
       </div>
 
-      <section className="card">
-        <div className="section-head">
-          <h3>Recent archaeology</h3>
-          <span className="muted">
-            {analysis.source.ref ? "Older commits from this snapshot" : "Pick a commit to load that version"}
-          </span>
-        </div>
-        {analysis.commits.length ? (
-          <div className="commit-list">
-            {analysis.commits.slice(0, 8).map((commit) => {
-              const current = Boolean(analysis.source.ref) && analysis.source.ref === commit.hash;
-              return (
-                <button
-                  type="button"
-                  className={`commit${current ? " current" : ""}`}
-                  key={`${commit.hash}-${commit.subject}`}
-                  onClick={() => onLoadCommit(commit)}
-                  disabled={busy || current}
-                  title={
-                    current
-                      ? "This commit is already loaded"
-                      : "Analyze the repository at this commit"
-                  }
-                >
-                  <span className="commit-hash">{commit.hash}</span>
-                  <span className="commit-subject">{commit.subject}</span>
-                  <span className="commit-meta">
-                    <span>
-                      {commit.author} · {commit.date}
-                      {commit.files ? ` · ${commit.files} files` : ""}
-                    </span>
-                    <span className="commit-action">
-                      {current ? "Viewing" : busy ? "Working…" : "Load →"}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
+      {!staticMode && (
+        <section className="card">
+          <div className="section-head">
+            <h3>Recent archaeology</h3>
+            <span className="muted">
+              {analysis.source.ref ? "Older commits from this snapshot" : "Pick a commit to load that version"}
+            </span>
           </div>
-        ) : (
-          <p className="empty">
-            Commit history is not available for this source. For local clones the app reads{" "}
-            <code>git log --numstat</code> directly.
-          </p>
-        )}
-      </section>
+          {analysis.commits.length ? (
+            <div className="commit-list">
+              {analysis.commits.slice(0, 8).map((commit) => {
+                const current = Boolean(analysis.source.ref) && analysis.source.ref === commit.hash;
+                return (
+                  <button
+                    type="button"
+                    className={`commit${current ? " current" : ""}`}
+                    key={`${commit.hash}-${commit.subject}`}
+                    onClick={() => onLoadCommit(commit)}
+                    disabled={busy || current}
+                    title={
+                      current
+                        ? "This commit is already loaded"
+                        : "Analyze the repository at this commit"
+                    }
+                  >
+                    <span className="commit-hash">{commit.hash}</span>
+                    <span className="commit-subject">{commit.subject}</span>
+                    <span className="commit-meta">
+                      <span>
+                        {commit.author} · {commit.date}
+                        {commit.files ? ` · ${commit.files} files` : ""}
+                      </span>
+                      <span className="commit-action">
+                        {current ? "Viewing" : busy ? "Working…" : "Load →"}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="empty">
+              Commit history is not available for this source. For local clones the app reads{" "}
+              <code>git log --numstat</code> directly.
+            </p>
+          )}
+        </section>
+      )}
 
       <section className="card notes">
         <div className="section-head">

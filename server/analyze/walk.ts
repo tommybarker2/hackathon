@@ -8,6 +8,7 @@ const IGNORED_DIRS = new Set([
   ".hg",
   ".svn",
   "dist",
+  "site",
   "build",
   "out",
   ".next",
