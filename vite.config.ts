@@ -9,6 +9,8 @@ const previewHosts = (process.env.PREVIEW_HOST ?? "")
   .filter(Boolean);
 
 export default defineConfig({
+  // GitHub Pages serves the app from a sub-path; the Pages build sets this to "./".
+  base: process.env.VITE_BASE?.trim() || "/",
   plugins: [react()],
   server: {
     host: "0.0.0.0",
@@ -17,7 +19,7 @@ export default defineConfig({
     allowedHosts: previewHosts,
   },
   build: {
-    outDir: "dist",
+    outDir: process.env.VITE_OUT_DIR?.trim() || "dist",
     sourcemap: false,
   },
 });

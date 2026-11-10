@@ -107,6 +107,8 @@ export function toPosix(p: string): string {
   return p.split(path.sep).join("/");
 }
 
+export { isTestFile } from "../../shared/files";
+
 /** Shared filters for filesystem walks and git-tree snapshots. */
 export function isIgnoredRepoPath(filePath: string): boolean {
   const parts = filePath.split("/");
@@ -171,12 +173,4 @@ export async function walkLocal(
 
   await visit(resolved);
   return { files, truncated };
-}
-
-export function isTestFile(filePath: string): boolean {
-  return (
-    /(^|\/)(tests?|__tests__|spec|e2e)\//i.test(filePath) ||
-    /\.(test|spec)\.[a-z]+$/i.test(filePath) ||
-    /(^|\/)(test_|conftest\.py)/i.test(filePath)
-  );
 }

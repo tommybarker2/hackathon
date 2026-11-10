@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Analysis, CommitInfo, ImpactResponse } from "../shared/types";
-import { analyzeImpact, analyzeRepo, getConfig } from "./api";
+import { analyzeImpact, analyzeRepo, getConfig, isStaticDemo } from "./api";
 import { AskView } from "./components/AskView";
 import { CodePanel } from "./components/CodePanel";
 import { DebtView } from "./components/DebtView";
@@ -124,6 +124,10 @@ export default function App() {
 
   function loadCommit(commit: CommitInfo) {
     if (!analysis || busy) return;
+    if (isStaticDemo) {
+      setError("Commit snapshots need the local Node server; this Pages build is one baked snapshot.");
+      return;
+    }
     const ref = commit.sha ?? commit.hash;
     if (analysis.source.kind === "github" && analysis.source.url) {
       setSource("github");
@@ -229,62 +233,75 @@ export default function App() {
             </span>
             Demo
           </button>
-          <button
-            type="button"
-            className="ghost examples-button"
-            onClick={() => setExamplesOpen(true)}
-          >
-            Examples
-          </button>
-          <div className="segmented">
+          {!isStaticDemo && (
             <button
               type="button"
-              className={source === "local" ? "active" : ""}
-              onClick={() => setSource("local")}
+              className="ghost examples-button"
+              onClick={() => setExamplesOpen(true)}
             >
-              This app
+              Examples
             </button>
-            <button
-              type="button"
-              className={source === "github" ? "active" : ""}
-              onClick={() => setSource("github")}
-            >
-              GitHub
-            </button>
-          </div>
-          {source === "local" ? (
-            <input
-              className="path-input"
-              value={localPath}
-              onChange={(event) => setLocalPath(event.target.value)}
-              spellCheck={false}
-              title="Local repository path — or paste a public GitHub URL"
-              aria-label="Local repository path or GitHub URL"
-              placeholder="Path — or paste a GitHub URL"
-              onPaste={(event) => {
-                const text = event.clipboardData.getData("text").trim();
-                if (!/github\.com[/:]/i.test(text)) return;
-                event.preventDefault();
-                setSource("github");
-                setGithubUrl(text);
-              }}
-            />
-          ) : (
-            <input
-              className="path-input wide"
-              value={githubUrl}
-              onChange={(event) => setGithubUrl(event.target.value)}
-              placeholder="https://github.com/owner/repo"
-              spellCheck={false}
-              aria-label="GitHub repository URL"
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void run();
-              }}
-            />
           )}
-          <button type="button" className="primary" onClick={() => void run()} disabled={busy}>
-            {busy ? "Analyzing…" : "Analyze"}
-          </button>
+          {isStaticDemo ? (
+            <span
+              className="engine-badge"
+              title="GitHub Pages is static-only. This build ships one baked analysis and runs the deterministic engine in the browser."
+            >
+              Pages demo · baked analysis
+            </span>
+          ) : (
+            <>
+              <div className="segmented">
+                <button
+                  type="button"
+                  className={source === "local" ? "active" : ""}
+                  onClick={() => setSource("local")}
+                >
+                  This app
+                </button>
+                <button
+                  type="button"
+                  className={source === "github" ? "active" : ""}
+                  onClick={() => setSource("github")}
+                >
+                  GitHub
+                </button>
+              </div>
+              {source === "local" ? (
+                <input
+                  className="path-input"
+                  value={localPath}
+                  onChange={(event) => setLocalPath(event.target.value)}
+                  spellCheck={false}
+                  title="Local repository path — or paste a public GitHub URL"
+                  aria-label="Local repository path or GitHub URL"
+                  placeholder="Path — or paste a GitHub URL"
+                  onPaste={(event) => {
+                    const text = event.clipboardData.getData("text").trim();
+                    if (!/github\.com[/:]/i.test(text)) return;
+                    event.preventDefault();
+                    setSource("github");
+                    setGithubUrl(text);
+                  }}
+                />
+              ) : (
+                <input
+                  className="path-input wide"
+                  value={githubUrl}
+                  onChange={(event) => setGithubUrl(event.target.value)}
+                  placeholder="https://github.com/owner/repo"
+                  spellCheck={false}
+                  aria-label="GitHub repository URL"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void run();
+                  }}
+                />
+              )}
+              <button type="button" className="primary" onClick={() => void run()} disabled={busy}>
+                {busy ? "Analyzing…" : "Analyze"}
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="theme-toggle"
@@ -331,6 +348,11 @@ export default function App() {
             <span className="engine-badge">
               {engine.llm ? `LLM · ${engine.model}` : "Deterministic engine"}
             </span>
+            {isStaticDemo && (
+              <span className="badge snapshot-badge" title="Static Pages build: the analysis is baked at build time.">
+                static demo
+              </span>
+            )}
           </div>
 
           <nav className="tabs">

@@ -7,9 +7,13 @@ const GEMINI_DEFAULT_MODEL = "gemini-3.5-flash-lite";
 
 export type LlmProvider = "openai" | "gemini";
 
+function env(name: string): string | undefined {
+  return typeof process !== "undefined" ? process.env[name] : undefined;
+}
+
 export function llmProvider(): LlmProvider | null {
-  if (process.env.OPENAI_API_KEY) return "openai";
-  if (process.env.GEMINI_API_KEY) return "gemini";
+  if (env("OPENAI_API_KEY")) return "openai";
+  if (env("GEMINI_API_KEY")) return "gemini";
   return null;
 }
 
@@ -19,7 +23,7 @@ export function llmConfigured(): boolean {
 
 /** Model id used by the optional answer layer, for /api/config and logging. */
 export function llmModel(): string {
-  if (process.env.OPENAI_MODEL) return process.env.OPENAI_MODEL;
+  if (env("OPENAI_MODEL")) return env("OPENAI_MODEL")!;
   return llmProvider() === "gemini" ? GEMINI_DEFAULT_MODEL : "gpt-4o-mini";
 }
 
@@ -44,11 +48,11 @@ async function llmComplete(messages: LlmMessage[], maxTokens: number): Promise<s
   const provider = llmProvider();
   if (!provider) return null;
 
-  const key = provider === "gemini" ? process.env.GEMINI_API_KEY : process.env.OPENAI_API_KEY;
+  const key = provider === "gemini" ? env("GEMINI_API_KEY") : env("OPENAI_API_KEY");
   if (!key) return null;
 
   const defaultBase = provider === "gemini" ? GEMINI_BASE_URL : "https://api.openai.com/v1";
-  const baseUrl = (process.env.OPENAI_BASE_URL ?? defaultBase).replace(/\/+$/, "");
+  const baseUrl = (env("OPENAI_BASE_URL") ?? defaultBase).replace(/\/+$/, "");
   const model = llmModel();
 
   const controller = new AbortController();

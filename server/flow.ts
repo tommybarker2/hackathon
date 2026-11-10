@@ -1,5 +1,5 @@
 import type { Analysis, Endpoint, FlowResponse, FlowStep, ImpactResponse, RepoSymbol } from "../shared/types";
-import { isTestFile } from "./analyze/walk";
+import { isTestFile } from "../shared/files";
 import { expandTokens, rankEndpoints, tokenize } from "./retrieval";
 import type { RepoRecord } from "./store";
 

@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "tsx server/index.ts",
     "build": "vite build",
+    "build:static": "tsx scripts/build-static.ts",
+    "build:pages": "node scripts/build-pages.mjs",
     "start": "NODE_ENV=production tsx server/index.ts",
     "typecheck": "tsc --noEmit"
   },
